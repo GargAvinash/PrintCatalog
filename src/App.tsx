@@ -13,7 +13,12 @@ import {
   LayoutGrid,
   AlertCircle,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  Eraser,
+  MousePointer2,
+  Square,
+  Rows3,
+  ListEnd
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { invoke } from '@tauri-apps/api/core';
@@ -59,6 +64,9 @@ interface AppState {
   savedTemplates: GridConfig[];
   imageConfigs: Record<string, Omit<PhotoInstance, 'imageId'>>;
 }
+
+type ApplyRange = 'cell' | 'row' | 'after';
+type GridAction = 'place' | 'clear';
 
 // --- Constants ---
 
@@ -160,6 +168,8 @@ export default function App() {
   const [isPaperStyleOpen, setIsPaperStyleOpen] = useState(false);
   const [draftGrid, setDraftGrid] = useState<GridConfig | null>(null);
   const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
+  const [applyRange, setApplyRange] = useState<ApplyRange>('cell');
+  const [gridAction, setGridAction] = useState<GridAction>('place');
   
   const [showPrintHint, setShowPrintHint] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -228,21 +238,53 @@ export default function App() {
     });
   };
 
+  const getApplyRangeKeys = (key: string, grid: GridConfig) => {
+    const { row, col } = parseCellKey(key);
+    if (!isCellInGrid(key, grid)) return [];
+
+    if (applyRange === 'row') {
+      return Array.from({ length: grid.cols }, (_, c) => `${row}-${c}`);
+    }
+
+    if (applyRange === 'after') {
+      const startIndex = row * grid.cols + col;
+      return Array.from({ length: grid.rows * grid.cols - startIndex }, (_, offset) => {
+        const index = startIndex + offset;
+        return `${Math.floor(index / grid.cols)}-${index % grid.cols}`;
+      });
+    }
+
+    return [key];
+  };
+
   const stampCell = (key: string) => {
+    const targetKeys = getApplyRangeKeys(key, state.grid);
+    if (targetKeys.length === 0) return;
+
+    if (gridAction === 'clear') {
+      setState(prev => {
+        const nextCells = { ...prev.cells };
+        targetKeys.forEach(targetKey => {
+          delete nextCells[targetKey];
+        });
+        return { ...prev, cells: nextCells };
+      });
+      return;
+    }
+
     if (state.selectedImageId) {
-      // Stamp
       setState(prev => {
         const config = prev.imageConfigs[prev.selectedImageId!] || { objectFit: 'cover', alignment: 'center', rotation: 0, outline: false };
+        const nextCells = { ...prev.cells };
+        targetKeys.forEach(targetKey => {
+          nextCells[targetKey] = { imageId: prev.selectedImageId!, ...config };
+        });
         return {
           ...prev,
-          cells: {
-            ...prev.cells,
-            [key]: { imageId: prev.selectedImageId!, ...config }
-          }
+          cells: nextCells
         };
       });
     } else {
-      // Clear cell if nothing selected but clicked (or open options if occupied)
       if (state.cells[key]) {
          setEditingPhotoId(state.cells[key].imageId);
       }
@@ -425,6 +467,65 @@ export default function App() {
              </button>
              <input type="file" multiple accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
           </div>
+
+          <div className="p-4 border-b border-slate-100 space-y-4">
+            <div>
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Apply Range</div>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: 'cell' as ApplyRange, label: 'Cell', icon: Square },
+                  { value: 'row' as ApplyRange, label: 'Row', icon: Rows3 },
+                  { value: 'after' as ApplyRange, label: 'After', icon: ListEnd },
+                ]).map(option => {
+                  const Icon = option.icon;
+                  const active = applyRange === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setApplyRange(option.value)}
+                      title={option.label}
+                      className={`h-11 rounded-lg border flex items-center justify-center transition ${
+                        active
+                          ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <Icon className="w-5 h-5" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Action</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setGridAction('place')}
+                  className={`h-10 rounded-lg border flex items-center justify-center gap-2 text-sm font-semibold transition ${
+                    gridAction === 'place'
+                      ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <MousePointer2 className="w-4 h-4" /> Place
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGridAction('clear')}
+                  className={`h-10 rounded-lg border flex items-center justify-center gap-2 text-sm font-semibold transition ${
+                    gridAction === 'clear'
+                      ? 'bg-red-600 border-red-600 text-white shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <Eraser className="w-4 h-4" /> Clear
+                </button>
+              </div>
+            </div>
+          </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
              {state.images.length === 0 && (
@@ -438,7 +539,10 @@ export default function App() {
                  return (
                    <div 
                      key={img.id} 
-                     onClick={() => setState(prev => ({ ...prev, selectedImageId: isSelected ? null : img.id }))}
+                     onClick={() => {
+                       setState(prev => ({ ...prev, selectedImageId: isSelected ? null : img.id }));
+                       if (!isSelected) setGridAction('place');
+                     }}
                      className={`
                        relative bg-white rounded-lg p-1.5 transition-all cursor-pointer group flex flex-col
                        ${isSelected ? 'ring-2 ring-blue-500 shadow-md bg-blue-50/10' : 'ring-1 ring-slate-200 hover:ring-slate-300 hover:shadow-sm'}
@@ -472,7 +576,9 @@ export default function App() {
              </div>
           </div>
           <div className="p-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 font-medium">
-            Select a photo, then click a cell to place it. Click a placed photo to edit options.
+            {gridAction === 'clear'
+              ? 'Clear mode removes photos using the selected range.'
+              : 'Select a photo, then click the grid using the selected range. Click a placed photo without a selected photo to edit options.'}
           </div>
         </aside>
 
@@ -522,8 +628,9 @@ export default function App() {
                       onClick={() => stampCell(key)}
                       className={`
                         relative overflow-hidden cursor-pointer border
-                        ${!image ? 'border-slate-200 border-dashed hover:bg-blue-50/50 print:border-transparent' : 
-                          (cell?.outline ? 'border-black' : 'border-transparent hover:border-blue-400 print:border-transparent')}
+                        ${gridAction === 'clear' && image ? 'border-transparent hover:border-red-500 hover:ring-2 hover:ring-red-200 print:border-transparent' :
+                          (!image ? 'border-slate-200 border-dashed hover:bg-blue-50/50 print:border-transparent' : 
+                            (cell?.outline ? 'border-black' : 'border-transparent hover:border-blue-400 print:border-transparent'))}
                       `}
                       style={{
                         width: `${state.grid.cellWidth}mm`,
