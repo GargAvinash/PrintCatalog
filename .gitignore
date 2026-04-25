@@ -5,3 +5,6 @@ dist
 
 # Tauri build artifacts
 src-tauri/target
+
+# Test PDFs
+*.pdf

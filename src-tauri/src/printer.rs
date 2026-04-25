@@ -118,7 +118,77 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
             CString::new(printer_name).map_err(|e| format!("Invalid printer name: {}", e))?
         };
 
-        let hdc = CreateDCA(PCSTR::null(), PCSTR(c_name.as_ptr() as *const u8), PCSTR::null(), None);
+        let printer_pcstr = PCSTR(c_name.as_ptr() as *const u8);
+
+        // --- Set custom paper size via DEVMODE ---
+        // DEVMODEA has complex unions in the windows crate, so we manipulate
+        // the raw bytes at the well-defined Microsoft ABI offsets:
+        //   offset 40: dmFields (u32)
+        //   offset 46: dmPaperSize (i16)
+        //   offset 48: dmPaperLength (i16)  — in tenths of mm
+        //   offset 50: dmPaperWidth (i16)   — in tenths of mm
+        const DEVMODE_OFFSET_FIELDS: usize = 40;
+        const DEVMODE_OFFSET_PAPER_SIZE: usize = 46;
+        const DEVMODE_OFFSET_PAPER_LENGTH: usize = 48;
+        const DEVMODE_OFFSET_PAPER_WIDTH: usize = 50;
+        const DM_PAPERSIZE: u32 = 0x0002;
+        const DM_PAPERLENGTH: u32 = 0x0004;
+        const DM_PAPERWIDTH: u32 = 0x0008;
+
+        // Query DEVMODE buffer size
+        let dm_size = DocumentPropertiesA(
+            None, PRINTER_HANDLE::default(), printer_pcstr, None, None, 0,
+        );
+
+        let hdc = if dm_size > 0 {
+            let mut dm_buf = vec![0u8; dm_size as usize];
+
+            // Fill with printer defaults
+            let got = DocumentPropertiesA(
+                None, PRINTER_HANDLE::default(), printer_pcstr,
+                Some(dm_buf.as_mut_ptr() as *mut _),
+                None, 2, // DM_OUT_BUFFER
+            );
+
+            if got >= 0 && dm_buf.len() >= 52 {
+                // Set custom paper: DMPAPER_USER = 0 (custom size)
+                let paper_w_tenths = (grid.page_width * 10.0).round() as i16;
+                let paper_h_tenths = (grid.page_height * 10.0).round() as i16;
+
+                // Update dmFields
+                let fields_ptr = dm_buf.as_mut_ptr().add(DEVMODE_OFFSET_FIELDS) as *mut u32;
+                *fields_ptr |= DM_PAPERSIZE | DM_PAPERLENGTH | DM_PAPERWIDTH;
+
+                // dmPaperSize = 0 (custom)
+                let ps_ptr = dm_buf.as_mut_ptr().add(DEVMODE_OFFSET_PAPER_SIZE) as *mut i16;
+                *ps_ptr = 0;
+
+                // dmPaperLength = height in tenths of mm
+                let pl_ptr = dm_buf.as_mut_ptr().add(DEVMODE_OFFSET_PAPER_LENGTH) as *mut i16;
+                *pl_ptr = paper_h_tenths;
+
+                // dmPaperWidth = width in tenths of mm
+                let pw_ptr = dm_buf.as_mut_ptr().add(DEVMODE_OFFSET_PAPER_WIDTH) as *mut i16;
+                *pw_ptr = paper_w_tenths;
+
+                println!(
+                    "[Printer] DEVMODE: custom paper {}x{} tenths-mm",
+                    paper_w_tenths, paper_h_tenths
+                );
+
+                CreateDCA(
+                    PCSTR::null(), printer_pcstr, PCSTR::null(),
+                    Some(dm_buf.as_ptr() as *const _),
+                )
+            } else {
+                println!("[Printer] Warning: DEVMODE query failed, using printer defaults");
+                CreateDCA(PCSTR::null(), printer_pcstr, PCSTR::null(), None)
+            }
+        } else {
+            println!("[Printer] Warning: DocumentProperties unavailable, using defaults");
+            CreateDCA(PCSTR::null(), printer_pcstr, PCSTR::null(), None)
+        };
+
         if hdc.is_invalid() {
             return Err("Failed to create printer device context".to_string());
         }
@@ -243,7 +313,9 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
 
             // Vector outline using GDI pen (crisp at any DPI)
             if cell.outline {
-                let pen = CreatePen(PS_SOLID, 1, COLORREF(0x00000000));
+                // ~0.3mm pen width, scaled to printer device units
+                let pen_w = (0.3 * scale_x).round().max(1.0) as i32;
+                let pen = CreatePen(PS_SOLID, pen_w, COLORREF(0x00000000));
                 let old_pen = SelectObject(hdc, pen.into());
                 let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
                 Rectangle(hdc, dest_x, dest_y, dest_x + dest_w, dest_y + dest_h);
