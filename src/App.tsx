@@ -613,20 +613,6 @@ export default function App() {
                          <option value="4x6,101.6,152.4">4x6" (101.6 x 152.4 mm)</option>
                       </select>
                     </div>
-                    <div className="w-32">
-                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">DPI (Quality)</label>
-                      <select 
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
-                        value={draftGrid.dpi || 600}
-                        onChange={e => {
-                          setDraftGrid(prev => prev ? ({...prev, dpi: parseInt(e.target.value) }) : prev);
-                        }}
-                      >
-                         <option value="300">300 DPI</option>
-                         <option value="600">600 DPI</option>
-                         <option value="1200">1200 DPI</option>
-                      </select>
-                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-6">

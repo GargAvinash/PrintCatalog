@@ -313,8 +313,8 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
 
             // Vector outline using GDI pen (crisp at any DPI)
             if cell.outline {
-                // ~0.3mm pen width, scaled to printer device units
-                let pen_w = (0.3 * scale_x).round().max(1.0) as i32;
+                // ~0.13mm pen width (matches professional photo apps)
+                let pen_w = (0.13 * scale_x).round().max(1.0) as i32;
                 let pen = CreatePen(PS_SOLID, pen_w, COLORREF(0x00000000));
                 let old_pen = SelectObject(hdc, pen.into());
                 let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
