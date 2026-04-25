@@ -559,9 +559,9 @@ export default function App() {
                      <div className="mt-2 flex items-center justify-between px-1">
                        <button 
                          onClick={(e) => { e.stopPropagation(); setEditingPhotoId(img.id); }}
-                         className="text-[10px] font-semibold text-slate-500 hover:text-blue-600 uppercase"
+                         className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wide text-blue-700 hover:bg-blue-600 hover:text-white transition"
                        >
-                         Options
+                         <Settings className="w-3 h-3" /> Options
                        </button>
                        <button 
                          onClick={(e) => deleteImage(img.id, e)}
@@ -628,9 +628,9 @@ export default function App() {
                       onClick={() => stampCell(key)}
                       className={`
                         relative overflow-hidden cursor-pointer border
-                        ${gridAction === 'clear' && image ? 'border-transparent hover:border-red-500 hover:ring-2 hover:ring-red-200 print:border-transparent' :
-                          (!image ? 'border-slate-200 border-dashed hover:bg-blue-50/50 print:border-transparent' : 
-                            (cell?.outline ? 'border-black' : 'border-transparent hover:border-blue-400 print:border-transparent'))}
+                        ${gridAction === 'clear' && image ? 'border-slate-400 hover:border-red-500 hover:ring-2 hover:ring-red-200 print:border-transparent' :
+                          (!image ? 'border-slate-400 border-dashed hover:bg-blue-50/50 print:border-transparent' : 
+                            (cell?.outline ? 'border-black' : 'border-slate-400 hover:border-blue-500 print:border-transparent'))}
                       `}
                       style={{
                         width: `${state.grid.cellWidth}mm`,
