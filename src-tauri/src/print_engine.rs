@@ -13,7 +13,7 @@ use image::{DynamicImage, RgbaImage, imageops, Rgba};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
-use crate::{PrintJob, CellInfo};
+use crate::PrintJob;
 
 /// Decode a base64 data URI (data:image/...;base64,...) into a DynamicImage
 fn decode_data_uri(data_uri: &str) -> Result<DynamicImage, String> {

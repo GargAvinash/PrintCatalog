@@ -2,7 +2,6 @@ mod print_engine;
 mod printer;
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 
 /// Grid layout configuration from the frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]

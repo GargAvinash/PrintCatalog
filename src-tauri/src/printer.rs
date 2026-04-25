@@ -8,12 +8,12 @@
 
 use image::RgbaImage;
 use std::ffi::CString;
-use std::ptr;
+
 
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::Graphics::Printing::*;
-use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::core::PCSTR;
+use windows::Win32::Storage::Xps::*;
+use windows::core::{PCSTR, PSTR};
 
 use crate::{GridConfig, PrinterInfo};
 
@@ -56,7 +56,7 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
         // Get default printer name
         let mut default_name_buf = vec![0u8; 512];
         let mut default_size = default_name_buf.len() as u32;
-        let has_default = GetDefaultPrinterA(Some(&mut default_name_buf), &mut default_size).is_ok();
+        let has_default = GetDefaultPrinterA(Some(PSTR(default_name_buf.as_mut_ptr())), &mut default_size).0 != 0;
         let default_name = if has_default {
             let end = default_name_buf.iter().position(|&b| b == 0).unwrap_or(0);
             String::from_utf8_lossy(&default_name_buf[..end]).to_string()
@@ -101,8 +101,9 @@ pub fn print_image(
             // Use default printer
             let mut default_name_buf = vec![0u8; 512];
             let mut size = default_name_buf.len() as u32;
-            GetDefaultPrinterA(Some(&mut default_name_buf), &mut size)
-                .map_err(|e| format!("No default printer found: {}", e))?;
+            if GetDefaultPrinterA(Some(PSTR(default_name_buf.as_mut_ptr())), &mut size).0 == 0 {
+                return Err("No default printer found".to_string());
+            }
 
             let end = default_name_buf.iter().position(|&b| b == 0).unwrap_or(0);
             let default_name = CString::new(&default_name_buf[..end])
@@ -144,8 +145,8 @@ pub fn print_image(
         }
 
         // --- 3. Get printer's physical dimensions ---
-        let printer_w = GetDeviceCaps(hdc, HORZRES);
-        let printer_h = GetDeviceCaps(hdc, VERTRES);
+        let printer_w = GetDeviceCaps(Some(hdc), HORZRES);
+        let printer_h = GetDeviceCaps(Some(hdc), VERTRES);
 
         println!(
             "[Printer] Printer resolution: {}x{} device units",
