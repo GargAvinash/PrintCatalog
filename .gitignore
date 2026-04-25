@@ -1,0 +1,7 @@
+node_modules
+dist
+.env.local
+.env
+
+# Tauri build artifacts
+src-tauri/target
