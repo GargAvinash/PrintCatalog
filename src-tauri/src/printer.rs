@@ -3,13 +3,12 @@
 /// Sends original-resolution images directly to the printer.
 /// The printer driver handles all DPI mapping and scaling.
 /// Uses source-crop StretchDIBits for cover/contain and GDI vector outlines.
-
 use crate::{PrintJob, PrinterInfo};
 use std::ffi::CString;
+use windows::Win32::Foundation::COLORREF;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::Graphics::Printing::*;
 use windows::Win32::Storage::Xps::*;
-use windows::Win32::Foundation::COLORREF;
 use windows::core::{PCSTR, PSTR};
 
 /// List all available printers on the system
@@ -48,7 +47,8 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
 
         let mut default_name_buf = vec![0u8; 512];
         let mut default_size = default_name_buf.len() as u32;
-        let has_default = GetDefaultPrinterA(Some(PSTR(default_name_buf.as_mut_ptr())), &mut default_size).0 != 0;
+        let has_default =
+            GetDefaultPrinterA(Some(PSTR(default_name_buf.as_mut_ptr())), &mut default_size).0 != 0;
         let default_name = if has_default {
             let end = default_name_buf.iter().position(|&b| b == 0).unwrap_or(0);
             String::from_utf8_lossy(&default_name_buf[..end]).to_string()
@@ -100,6 +100,75 @@ fn rgba_to_bgr(img: &image::RgbaImage) -> Vec<u8> {
     bgr
 }
 
+fn alignment_factors(alignment: &str) -> (f64, f64) {
+    let x = if alignment.ends_with("left") {
+        0.0
+    } else if alignment.ends_with("right") {
+        1.0
+    } else {
+        0.5
+    };
+
+    let y = if alignment.starts_with("top") {
+        0.0
+    } else if alignment.starts_with("bottom") {
+        1.0
+    } else {
+        0.5
+    };
+
+    (x, y)
+}
+
+fn aligned_offset(extra: i32, factor: f64) -> i32 {
+    ((extra.max(0) as f64) * factor).round() as i32
+}
+
+fn compute_image_placement(
+    object_fit: &str,
+    alignment: &str,
+    src_w: i32,
+    src_h: i32,
+    dest_x: i32,
+    dest_y: i32,
+    dest_w: i32,
+    dest_h: i32,
+    cell_width_mm: f64,
+    cell_height_mm: f64,
+) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
+    let img_aspect = src_w as f64 / src_h as f64;
+    let cell_aspect = cell_width_mm / cell_height_mm;
+    let (align_x, align_y) = alignment_factors(alignment);
+
+    if object_fit == "contain" {
+        // Contain: show entire image, adjust destination to maintain aspect.
+        if img_aspect > cell_aspect {
+            // Image wider than cell -> shrink destination height.
+            let adj_h = (dest_w as f64 / img_aspect).round() as i32;
+            let oy = aligned_offset(dest_h - adj_h, align_y);
+            (0, 0, src_w, src_h, dest_x, dest_y + oy, dest_w, adj_h)
+        } else {
+            // Image taller than cell -> shrink destination width.
+            let adj_w = (dest_h as f64 * img_aspect).round() as i32;
+            let ox = aligned_offset(dest_w - adj_w, align_x);
+            (0, 0, src_w, src_h, dest_x + ox, dest_y, adj_w, dest_h)
+        }
+    } else {
+        // Cover: fill cell, crop excess from source according to alignment.
+        if img_aspect > cell_aspect {
+            // Image wider -> crop width from source.
+            let vis_w = (src_h as f64 * cell_aspect).round() as i32;
+            let cx = aligned_offset(src_w - vis_w, align_x);
+            (cx, 0, vis_w, src_h, dest_x, dest_y, dest_w, dest_h)
+        } else {
+            // Image taller -> crop height from source.
+            let vis_h = (src_w as f64 / cell_aspect).round() as i32;
+            let cy = aligned_offset(src_h - vis_h, align_y);
+            (0, cy, src_w, vis_h, dest_x, dest_y, dest_w, dest_h)
+        }
+    }
+}
+
 /// Send the print job directly to a printer via Win32 GDI.
 pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
     let grid = &job.grid;
@@ -137,7 +206,12 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
 
         // Query DEVMODE buffer size
         let dm_size = DocumentPropertiesA(
-            None, PRINTER_HANDLE::default(), printer_pcstr, None, None, 0,
+            None,
+            PRINTER_HANDLE::default(),
+            printer_pcstr,
+            None,
+            None,
+            0,
         );
 
         let hdc = if dm_size > 0 {
@@ -145,9 +219,12 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
 
             // Fill with printer defaults
             let got = DocumentPropertiesA(
-                None, PRINTER_HANDLE::default(), printer_pcstr,
+                None,
+                PRINTER_HANDLE::default(),
+                printer_pcstr,
                 Some(dm_buf.as_mut_ptr() as *mut _),
-                None, 2, // DM_OUT_BUFFER
+                None,
+                2, // DM_OUT_BUFFER
             );
 
             if got >= 0 && dm_buf.len() >= 52 {
@@ -177,7 +254,9 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
                 );
 
                 CreateDCA(
-                    PCSTR::null(), printer_pcstr, PCSTR::null(),
+                    PCSTR::null(),
+                    printer_pcstr,
+                    PCSTR::null(),
                     Some(dm_buf.as_ptr() as *const _),
                 )
             } else {
@@ -230,6 +309,14 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
 
         // --- 4. Draw each cell ---
         for cell in &job.cells {
+            if cell.row >= grid.rows || cell.col >= grid.cols {
+                println!(
+                    "[Printer] Skipping out-of-grid cell ({},{}) for {}x{} grid",
+                    cell.row, cell.col, grid.rows, grid.cols
+                );
+                continue;
+            }
+
             let img = crate::print_engine::prepare_cell_image(cell)?;
             let rgba = img.to_rgba8();
             let src_w = rgba.width() as i32;
@@ -261,37 +348,18 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
             let dest_w = (grid.cell_width * scale_x).round() as i32;
             let dest_h = (grid.cell_height * scale_y).round() as i32;
 
-            // Source crop for cover/contain — crop from source, not destination
-            let img_aspect = src_w as f64 / src_h as f64;
-            let cell_aspect = grid.cell_width / grid.cell_height;
-
-            let (sx, sy, sw, sh, dx, dy, dw, dh) = if cell.object_fit == "contain" {
-                // Contain: show entire image, adjust destination to maintain aspect
-                if img_aspect > cell_aspect {
-                    // Image wider than cell → shrink dest height
-                    let adj_h = (dest_w as f64 / img_aspect).round() as i32;
-                    let oy = (dest_h - adj_h) / 2;
-                    (0, 0, src_w, src_h, dest_x, dest_y + oy, dest_w, adj_h)
-                } else {
-                    // Image taller than cell → shrink dest width
-                    let adj_w = (dest_h as f64 * img_aspect).round() as i32;
-                    let ox = (dest_w - adj_w) / 2;
-                    (0, 0, src_w, src_h, dest_x + ox, dest_y, adj_w, dest_h)
-                }
-            } else {
-                // Cover: fill cell, crop excess from source
-                if img_aspect > cell_aspect {
-                    // Image wider → crop width from source
-                    let vis_w = (src_h as f64 * cell_aspect).round() as i32;
-                    let cx = (src_w - vis_w) / 2;
-                    (cx, 0, vis_w, src_h, dest_x, dest_y, dest_w, dest_h)
-                } else {
-                    // Image taller → crop height from source
-                    let vis_h = (src_w as f64 / cell_aspect).round() as i32;
-                    let cy = (src_h - vis_h) / 2;
-                    (0, cy, src_w, vis_h, dest_x, dest_y, dest_w, dest_h)
-                }
-            };
+            let (sx, sy, sw, sh, dx, dy, dw, dh) = compute_image_placement(
+                &cell.object_fit,
+                &cell.alignment,
+                src_w,
+                src_h,
+                dest_x,
+                dest_y,
+                dest_w,
+                dest_h,
+                grid.cell_width,
+                grid.cell_height,
+            );
 
             println!(
                 "[Printer] Cell ({},{}) — {}x{}px → src({},{} {}x{}) → dest({},{} {}x{})",
@@ -299,9 +367,19 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
             );
 
             let result = StretchDIBits(
-                hdc, dx, dy, dw, dh, sx, sy, sw, sh,
+                hdc,
+                dx,
+                dy,
+                dw,
+                dh,
+                sx,
+                sy,
+                sw,
+                sh,
                 Some(bgr.as_ptr() as *const _),
-                &bmi, DIB_RGB_COLORS, SRCCOPY,
+                &bmi,
+                DIB_RGB_COLORS,
+                SRCCOPY,
             );
 
             if result == 0 {
@@ -318,7 +396,7 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
                 let pen = CreatePen(PS_SOLID, pen_w, COLORREF(0x00000000));
                 let old_pen = SelectObject(hdc, pen.into());
                 let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-                Rectangle(hdc, dest_x, dest_y, dest_x + dest_w, dest_y + dest_h);
+                let _ = Rectangle(hdc, dest_x, dest_y, dest_x + dest_w, dest_y + dest_h);
                 SelectObject(hdc, old_pen);
                 SelectObject(hdc, old_brush);
                 let _ = DeleteObject(pen.into());
@@ -334,5 +412,77 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
 
         println!("[Printer] Print job completed");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_image_placement;
+
+    #[test]
+    fn cover_alignment_crops_wide_source_from_requested_side() {
+        let left = compute_image_placement(
+            "cover",
+            "center-left",
+            400,
+            200,
+            10,
+            20,
+            100,
+            100,
+            50.0,
+            50.0,
+        );
+        let right = compute_image_placement(
+            "cover",
+            "center-right",
+            400,
+            200,
+            10,
+            20,
+            100,
+            100,
+            50.0,
+            50.0,
+        );
+
+        assert_eq!(left, (0, 0, 200, 200, 10, 20, 100, 100));
+        assert_eq!(right, (200, 0, 200, 200, 10, 20, 100, 100));
+    }
+
+    #[test]
+    fn contain_alignment_places_narrow_source_in_requested_position() {
+        let bottom_right = compute_image_placement(
+            "contain",
+            "bottom-right",
+            100,
+            200,
+            10,
+            20,
+            100,
+            100,
+            50.0,
+            50.0,
+        );
+
+        assert_eq!(bottom_right, (0, 0, 100, 200, 60, 20, 50, 100));
+    }
+
+    #[test]
+    fn unknown_alignment_defaults_to_center() {
+        let centered = compute_image_placement(
+            "contain",
+            "unexpected",
+            400,
+            200,
+            10,
+            20,
+            100,
+            100,
+            50.0,
+            50.0,
+        );
+
+        assert_eq!(centered, (0, 0, 400, 200, 10, 45, 100, 50));
     }
 }

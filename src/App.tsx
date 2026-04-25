@@ -91,6 +91,22 @@ const ALIGNMENT_MAP: Record<string, string> = {
   'bottom-right': '100% 100%'
 };
 
+const parseCellKey = (key: string) => {
+  const [row, col] = key.split('-').map(Number);
+  return { row, col };
+};
+
+const isCellInGrid = (key: string, grid: GridConfig) => {
+  const { row, col } = parseCellKey(key);
+  return Number.isInteger(row) && Number.isInteger(col) && row >= 0 && col >= 0 && row < grid.rows && col < grid.cols;
+};
+
+const pruneCellsToGrid = (cells: Record<string, PhotoInstance>, grid: GridConfig) => {
+  return Object.fromEntries(
+    Object.entries(cells).filter(([key]) => isCellInGrid(key, grid))
+  ) as Record<string, PhotoInstance>;
+};
+
 // --- Components ---
 
 function DraftInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
@@ -233,8 +249,8 @@ export default function App() {
 
   const handlePrint = async () => {
     // Build the print job: collect all occupied cells with their image data
-    const cells = Object.entries(state.cells).map(([key, cell]) => {
-      const [row, col] = key.split('-').map(Number);
+    const cells = Object.entries(state.cells).filter(([key]) => isCellInGrid(key, state.grid)).map(([key, cell]) => {
+      const { row, col } = parseCellKey(key);
       const image = state.images.find(img => img.id === cell.imageId);
       return {
         row,
@@ -697,7 +713,11 @@ export default function App() {
             <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-100 sticky bottom-0 z-10">
                <button 
                   onClick={() => {
-                     setState(prev => ({...prev, grid: draftGrid}));
+                     setState(prev => ({
+                       ...prev,
+                       grid: draftGrid,
+                       cells: pruneCellsToGrid(prev.cells, draftGrid)
+                     }));
                      setIsPaperStyleOpen(false);
                   }} 
                   className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition shadow-sm"
