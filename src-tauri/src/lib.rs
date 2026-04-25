@@ -59,12 +59,9 @@ fn list_printers() -> Result<Vec<PrinterInfo>, String> {
 /// bypassing the browser's print pipeline entirely.
 #[tauri::command]
 fn print_direct(job: PrintJob, printer_name: Option<String>) -> Result<String, String> {
-    // 1. Compose the full-resolution page image
-    let page_image = print_engine::compose_page(&job)?;
-
-    // 2. Send to printer via Win32 GDI
+    // 1. Send to printer via Win32 GDI natively
     let printer = printer_name.unwrap_or_else(|| String::from(""));
-    printer::print_image(&page_image, &job.grid, &printer)?;
+    printer::print_job(&job, &printer)?;
 
     Ok("Print job sent successfully".to_string())
 }

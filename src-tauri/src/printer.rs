@@ -5,17 +5,12 @@
 /// any browser or application print dialog.
 ///
 /// The flow: composed RGBA image → BMP in memory → StretchDIBits to printer DC
-
-use image::RgbaImage;
+use crate::{PrintJob, PrinterInfo};
 use std::ffi::CString;
-
-
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::Graphics::Printing::*;
 use windows::Win32::Storage::Xps::*;
 use windows::core::{PCSTR, PSTR};
-
-use crate::{GridConfig, PrinterInfo};
 
 /// List all available printers on the system
 pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
@@ -86,13 +81,13 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
     }
 }
 
-/// Send a composed RGBA image directly to a printer via Win32 GDI.
+/// Send the print job directly to a printer via Win32 GDI.
 ///
-/// This uses StretchDIBits to send the image at full resolution to the
-/// printer's device context. The printer driver handles final DPI mapping.
-pub fn print_image(
-    image: &RgbaImage,
-    grid: &GridConfig,
+/// This iterates over each cell, fetches the native image data, and uses
+/// StretchDIBits to send each image directly to the printer's device context.
+/// The printer driver handles the final high-quality DPI mapping and scaling.
+pub fn print_job(
+    job: &PrintJob,
     printer_name: &str,
 ) -> Result<(), String> {
     unsafe {
@@ -134,95 +129,140 @@ pub fn print_image(
 
         let job_id = StartDocA(hdc, &doc_info);
         if job_id <= 0 {
-            DeleteDC(hdc);
+            let _ = DeleteDC(hdc);
             return Err("Failed to start print job".to_string());
         }
 
         if StartPage(hdc) <= 0 {
-            EndDoc(hdc);
-            DeleteDC(hdc);
+            let _ = EndDoc(hdc);
+            let _ = DeleteDC(hdc);
             return Err("Failed to start page".to_string());
         }
+
+        // Enable high-quality resampling in GDI
+        SetStretchBltMode(hdc, HALFTONE);
 
         // --- 3. Get printer's physical dimensions ---
         let printer_w = GetDeviceCaps(Some(hdc), HORZRES);
         let printer_h = GetDeviceCaps(Some(hdc), VERTRES);
 
+        let grid = &job.grid;
+        // Scale UI mm to Printer device pixels
+        let scale_x = printer_w as f64 / grid.page_width;
+        let scale_y = printer_h as f64 / grid.page_height;
+
         println!(
-            "[Printer] Printer resolution: {}x{} device units",
-            printer_w, printer_h
+            "[Printer] Printer resolution: {}x{} device units. Scale: {:.2} px/mm",
+            printer_w, printer_h, scale_x
         );
 
-        // --- 4. Prepare bitmap info ---
-        let width = image.width() as i32;
-        let height = image.height() as i32;
+        // --- 4. Process and draw each cell natively ---
+        for cell in &job.cells {
+            let processed_img = crate::print_engine::process_cell_image(
+                cell,
+                grid.cell_width,
+                grid.cell_height
+            )?;
 
-        // Convert RGBA to BGR (GDI expects BGR bottom-up)
-        let mut bgr_pixels: Vec<u8> = Vec::with_capacity((width * height * 3) as usize);
-        // GDI bitmaps are bottom-up, so iterate rows in reverse
-        for y in (0..height).rev() {
-            for x in 0..width {
-                let pixel = image.get_pixel(x as u32, y as u32);
-                bgr_pixels.push(pixel[2]); // B
-                bgr_pixels.push(pixel[1]); // G
-                bgr_pixels.push(pixel[0]); // R
+            let width = processed_img.width() as i32;
+            let height = processed_img.height() as i32;
+
+            // Convert RGBA to BGR (GDI expects BGR bottom-up)
+            let mut bgr_pixels: Vec<u8> = Vec::with_capacity((width * height * 3) as usize);
+            for y in (0..height).rev() {
+                for x in 0..width {
+                    let pixel = processed_img.get_pixel(x as u32, y as u32);
+                    bgr_pixels.push(pixel[2]); // B
+                    bgr_pixels.push(pixel[1]); // G
+                    bgr_pixels.push(pixel[0]); // R
+                }
+                let row_bytes = width * 3;
+                let padding = (4 - (row_bytes % 4)) % 4;
+                for _ in 0..padding {
+                    bgr_pixels.push(0);
+                }
             }
-            // Pad rows to 4-byte alignment
-            let row_bytes = width * 3;
-            let padding = (4 - (row_bytes % 4)) % 4;
-            for _ in 0..padding {
-                bgr_pixels.push(0);
+
+            let bmi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: width,
+                    biHeight: height,
+                    biPlanes: 1,
+                    biBitCount: 24,
+                    biCompression: 0,
+                    biSizeImage: bgr_pixels.len() as u32,
+                    biXPelsPerMeter: 0,
+                    biYPelsPerMeter: 0,
+                    biClrUsed: 0,
+                    biClrImportant: 0,
+                },
+                bmiColors: [RGBQUAD::default()],
+            };
+
+            // Calculate destination rectangle in printer device units
+            let cell_x_mm = grid.padding_left + cell.col as f64 * (grid.cell_width + grid.gap_x);
+            let cell_y_mm = grid.padding_top + cell.row as f64 * (grid.cell_height + grid.gap_y);
+
+            let dest_x = (cell_x_mm * scale_x).round() as i32;
+            let dest_y = (cell_y_mm * scale_y).round() as i32;
+            let dest_w = (grid.cell_width * scale_x).round() as i32;
+            let dest_h = (grid.cell_height * scale_y).round() as i32;
+
+            let result = StretchDIBits(
+                hdc,
+                dest_x, dest_y, dest_w, dest_h,
+                0, 0, width, height,
+                Some(bgr_pixels.as_ptr() as *const _),
+                &bmi,
+                DIB_RGB_COLORS,
+                SRCCOPY,
+            );
+
+            if result == 0 {
+                let _ = EndPage(hdc);
+                let _ = EndDoc(hdc);
+                let _ = DeleteDC(hdc);
+                return Err("StretchDIBits failed on cell".to_string());
+            }
+
+            // Draw outline if requested
+            if cell.outline {
+                let black: [u8; 4] = [0, 0, 0, 0];
+                let bmi_black = BITMAPINFO {
+                    bmiHeader: BITMAPINFOHEADER {
+                        biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                        biWidth: 1,
+                        biHeight: 1,
+                        biPlanes: 1,
+                        biBitCount: 24,
+                        biCompression: 0,
+                        biSizeImage: 4,
+                        biXPelsPerMeter: 0,
+                        biYPelsPerMeter: 0,
+                        biClrUsed: 0,
+                        biClrImportant: 0,
+                    },
+                    bmiColors: [RGBQUAD::default()],
+                };
+
+                let thick = (2.0 * scale_x / 10.0).max(2.0) as i32; // Scale outline thickness based on DPI
+                let p = Some(black.as_ptr() as *const _);
+                let b = &bmi_black;
+
+                StretchDIBits(hdc, dest_x, dest_y, dest_w, thick, 0, 0, 1, 1, p, b, DIB_RGB_COLORS, SRCCOPY); // Top
+                StretchDIBits(hdc, dest_x, dest_y + dest_h - thick, dest_w, thick, 0, 0, 1, 1, p, b, DIB_RGB_COLORS, SRCCOPY); // Bottom
+                StretchDIBits(hdc, dest_x, dest_y, thick, dest_h, 0, 0, 1, 1, p, b, DIB_RGB_COLORS, SRCCOPY); // Left
+                StretchDIBits(hdc, dest_x + dest_w - thick, dest_y, thick, dest_h, 0, 0, 1, 1, p, b, DIB_RGB_COLORS, SRCCOPY); // Right
             }
         }
 
-        let bmi = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width,
-                biHeight: height, // positive = bottom-up
-                biPlanes: 1,
-                biBitCount: 24,
-                biCompression: 0, // BI_RGB
-                biSizeImage: bgr_pixels.len() as u32,
-                biXPelsPerMeter: 0,
-                biYPelsPerMeter: 0,
-                biClrUsed: 0,
-                biClrImportant: 0,
-            },
-            bmiColors: [RGBQUAD::default()],
-        };
+        println!("[Printer] All images sent successfully");
 
-        // --- 5. Send image to printer ---
-        // StretchDIBits scales our image to fill the printer's page area
-        let result = StretchDIBits(
-            hdc,
-            0,              // dest X
-            0,              // dest Y
-            printer_w,      // dest width (full printer page)
-            printer_h,      // dest height (full printer page)
-            0,              // src X
-            0,              // src Y
-            width,          // src width
-            height,         // src height
-            Some(bgr_pixels.as_ptr() as *const _),
-            &bmi,
-            DIB_RGB_COLORS,
-            SRCCOPY,
-        );
-
-        if result == 0 {
-            EndPage(hdc);
-            EndDoc(hdc);
-            DeleteDC(hdc);
-            return Err("StretchDIBits failed".to_string());
-        }
-
-        println!("[Printer] Image sent to printer successfully");
-
-        // --- 6. Finish ---
-        EndPage(hdc);
-        EndDoc(hdc);
-        DeleteDC(hdc);
+        // --- 5. Finish ---
+        let _ = EndPage(hdc);
+        let _ = EndDoc(hdc);
+        let _ = DeleteDC(hdc);
 
         println!("[Printer] Print job completed");
         Ok(())
