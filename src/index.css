@@ -1,1 +1,12 @@
 @import "tailwindcss";
+
+@media print {
+  .preview-scale-shell {
+    width: auto !important;
+    height: auto !important;
+  }
+
+  .preview-page {
+    transform: none !important;
+  }
+}

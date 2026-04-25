@@ -163,6 +163,8 @@ export default function App() {
   
   const [showPrintHint, setShowPrintHint] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewAreaRef = useRef<HTMLElement>(null);
+  const [previewScale, setPreviewScale] = useState(1);
 
   // Printer states
   const [printers, setPrinters] = useState<{name: string; is_default: boolean}[]>([]);
@@ -309,6 +311,38 @@ export default function App() {
     return contentW > (g.pageWidth || 210) || contentH > (g.pageHeight || 297);
   };
 
+  useEffect(() => {
+    const area = previewAreaRef.current;
+    if (!area) return;
+
+    const updateScale = () => {
+      const mmToPx = 96 / 25.4;
+      const pageWidthPx = (state.grid.pageWidth || 210) * mmToPx;
+      const pageHeightPx = (state.grid.pageHeight || 297) * mmToPx;
+      const styles = window.getComputedStyle(area);
+      const availableWidth = area.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+      const availableHeight = area.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom);
+      const nextScale = Math.min(
+        1,
+        availableWidth / pageWidthPx,
+        availableHeight / pageHeightPx
+      );
+
+      setPreviewScale(Math.max(0.1, nextScale));
+    };
+
+    updateScale();
+    const resizeObserver = new ResizeObserver(updateScale);
+    resizeObserver.observe(area);
+    return () => resizeObserver.disconnect();
+  }, [state.grid.pageWidth, state.grid.pageHeight]);
+
+  const pageWidthMm = state.grid.pageWidth || 210;
+  const pageHeightMm = state.grid.pageHeight || 297;
+  const mmToPx = 96 / 25.4;
+  const previewWidthPx = pageWidthMm * mmToPx;
+  const previewHeightPx = pageHeightMm * mmToPx;
+
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans overflow-hidden select-none text-slate-800">
       
@@ -443,13 +477,22 @@ export default function App() {
         </aside>
 
         {/* Canvas Area */}
-        <main className="flex-1 overflow-auto flex items-center justify-center p-8 bg-slate-100/50 print:p-0 print:bg-white relative custom-scrollbar">
-          
+        <main ref={previewAreaRef} className="flex-1 overflow-auto p-8 bg-slate-100/50 print:p-0 print:bg-white relative custom-scrollbar">
+          <div className="min-h-full min-w-full flex items-center justify-center print:block">
+            <div
+              className="preview-scale-shell transition-all duration-300 print:w-auto print:h-auto"
+              style={{
+                width: `${previewWidthPx * previewScale}px`,
+                height: `${previewHeightPx * previewScale}px`,
+              }}
+            >
           <div 
-            className="bg-white shadow-xl relative transition-all duration-300 print:m-0 print:shadow-none mx-auto border border-slate-200 rounded-sm"
+            className="preview-page bg-white shadow-xl relative transition-all duration-300 print:m-0 print:shadow-none mx-auto border border-slate-200 rounded-sm"
             style={{ 
-              width: `${state.grid.pageWidth || 210}mm`, 
-              height: `${state.grid.pageHeight || 297}mm`
+              width: `${pageWidthMm}mm`, 
+              height: `${pageHeightMm}mm`,
+              transform: `scale(${previewScale})`,
+              transformOrigin: 'top left',
             }}
           >
             <div 
@@ -510,6 +553,8 @@ export default function App() {
             
             <div className="absolute bottom-4 right-4 text-xs font-semibold text-slate-500 print:hidden">
                Page 1/1
+            </div>
+          </div>
             </div>
           </div>
 
