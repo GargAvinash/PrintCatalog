@@ -10,7 +10,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "title": "PrintCatalog",
     "windows": [
       {
         "title": "PrintCatalog — High Quality Photo Printing",
