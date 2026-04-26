@@ -1,6 +1,6 @@
 [package]
 name = "print-catalog"
-version = "1.0.0"
+version = "1.1.0"
 description = "High quality photo grid printing"
 authors = ["PrintCatalog"]
 edition = "2024"
