@@ -71,21 +71,37 @@ type GridAction = 'place' | 'clear';
 // --- Constants ---
 
 const DEFAULT_GRID: GridConfig = {
-  id: 'passport',
-  name: 'Passport (35x45mm)',
-  rows: 4,
-  cols: 4,
+  id: 'a4',
+  name: 'A4',
+  rows: 5,
+  cols: 5,
   cellWidth: 35,
   cellHeight: 45,
   gapX: 5,
   gapY: 5,
-  paddingTop: 10,
+  paddingTop: 5,
   paddingLeft: 10,
   pageName: 'A4',
   pageWidth: 210,
   pageHeight: 297,
   dpi: 600
 };
+
+const BUILT_IN_TEMPLATES: GridConfig[] = [
+  DEFAULT_GRID,
+  {
+    ...DEFAULT_GRID,
+    id: '4x6',
+    name: '4x6',
+    rows: 3,
+    cols: 2,
+    pageName: '4x6',
+    pageWidth: 101.6,
+    pageHeight: 152.4,
+  },
+];
+
+const createCustomTemplateId = () => `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 const ALIGNMENT_MAP: Record<string, string> = {
   'top-left': '0% 0%',
@@ -114,6 +130,45 @@ const pruneCellsToGrid = (cells: Record<string, PhotoInstance>, grid: GridConfig
     Object.entries(cells).filter(([key]) => isCellInGrid(key, grid))
   ) as Record<string, PhotoInstance>;
 };
+
+const normalizeGridForCompare = (grid: GridConfig) => ({
+  rows: grid.rows,
+  cols: grid.cols,
+  cellWidth: grid.cellWidth,
+  cellHeight: grid.cellHeight,
+  gapX: grid.gapX,
+  gapY: grid.gapY,
+  paddingTop: grid.paddingTop,
+  paddingLeft: grid.paddingLeft,
+  pageName: grid.pageName || '',
+  pageWidth: grid.pageWidth || 210,
+  pageHeight: grid.pageHeight || 297,
+  dpi: grid.dpi || 600,
+});
+
+const gridsMatch = (a: GridConfig, b: GridConfig) => (
+  JSON.stringify(normalizeGridForCompare(a)) === JSON.stringify(normalizeGridForCompare(b))
+);
+
+const mergeTemplates = (savedTemplates: GridConfig[] = []) => {
+  const seenNames = new Set(BUILT_IN_TEMPLATES.map(template => template.name.trim().toLowerCase()));
+  const customTemplates = savedTemplates.filter(template => {
+    if (template.id === 'passport') return false;
+    if (BUILT_IN_TEMPLATES.some(builtIn => builtIn.id === template.id)) return false;
+
+    const nameKey = template.name.trim().toLowerCase();
+    if (!nameKey || seenNames.has(nameKey)) return false;
+
+    seenNames.add(nameKey);
+    return true;
+  });
+
+  return [...BUILT_IN_TEMPLATES, ...customTemplates];
+};
+
+const templateNameExists = (templates: GridConfig[], name: string) => (
+  templates.some(template => template.name.trim().toLowerCase() === name.trim().toLowerCase())
+);
 
 // --- Components ---
 
@@ -148,6 +203,7 @@ export default function App() {
         return {
           ...parsed,
           selectedImageId: null,
+          savedTemplates: mergeTemplates(parsed.savedTemplates || []),
           imageConfigs: parsed.imageConfigs || {}
         };
       } catch (e) {
@@ -159,7 +215,7 @@ export default function App() {
       images: [],
       cells: {},
       selectedImageId: null,
-      savedTemplates: [DEFAULT_GRID],
+      savedTemplates: BUILT_IN_TEMPLATES,
       imageConfigs: {}
     };
   });
@@ -167,6 +223,9 @@ export default function App() {
   // Modal States
   const [isPaperStyleOpen, setIsPaperStyleOpen] = useState(false);
   const [draftGrid, setDraftGrid] = useState<GridConfig | null>(null);
+  const [pendingTemplateGrid, setPendingTemplateGrid] = useState<GridConfig | null>(null);
+  const [templateNameDraft, setTemplateNameDraft] = useState('');
+  const [templateNameError, setTemplateNameError] = useState('');
   const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
   const [applyRange, setApplyRange] = useState<ApplyRange>('cell');
   const [gridAction, setGridAction] = useState<GridAction>('place');
@@ -291,6 +350,77 @@ export default function App() {
     }
   };
 
+  const applyPaperStyle = () => {
+    if (!draftGrid) return;
+
+    const existingMatch = state.savedTemplates.find(template => gridsMatch(template, draftGrid));
+    if (existingMatch) {
+      const nextGrid = { ...existingMatch };
+      setState(prev => ({
+        ...prev,
+        grid: nextGrid,
+        cells: pruneCellsToGrid(prev.cells, nextGrid)
+      }));
+      setIsPaperStyleOpen(false);
+      return;
+    }
+
+    const isBuiltIn = BUILT_IN_TEMPLATES.some(t => t.id === draftGrid.id);
+    
+    if (isBuiltIn) {
+      setPendingTemplateGrid({ ...draftGrid });
+      setTemplateNameDraft('');
+      setTemplateNameError('');
+    } else {
+      const nextGrid = { ...draftGrid };
+      const nextTemplates = state.savedTemplates.map(t => 
+        t.id === nextGrid.id ? nextGrid : t
+      );
+      
+      setState(prev => ({
+        ...prev,
+        grid: nextGrid,
+        savedTemplates: nextTemplates,
+        cells: pruneCellsToGrid(prev.cells, nextGrid)
+      }));
+      setIsPaperStyleOpen(false);
+    }
+  };
+
+  const saveNamedPaperStyle = () => {
+    if (!pendingTemplateGrid) return;
+
+    const templateName = templateNameDraft.trim();
+    if (!templateName) {
+      setTemplateNameError('Enter a paper style name.');
+      return;
+    }
+
+    if (templateNameExists(state.savedTemplates, templateName)) {
+      setTemplateNameError('A paper style with this name already exists.');
+      return;
+    }
+
+    const nextGrid = {
+      ...pendingTemplateGrid,
+      id: createCustomTemplateId(),
+      name: templateName,
+      pageName: pendingTemplateGrid.pageName || templateName,
+    };
+    const nextTemplates = mergeTemplates([...state.savedTemplates, nextGrid]);
+
+    setState(prev => ({
+      ...prev,
+      grid: nextGrid,
+      savedTemplates: nextTemplates,
+      cells: pruneCellsToGrid(prev.cells, nextGrid)
+    }));
+    setPendingTemplateGrid(null);
+    setTemplateNameDraft('');
+    setTemplateNameError('');
+    setIsPaperStyleOpen(false);
+  };
+
   const handlePrint = async () => {
     // Build the print job: collect all occupied cells with their image data
     const cells = Object.entries(state.cells).filter(([key]) => isCellInGrid(key, state.grid)).map(([key, cell]) => {
@@ -404,7 +534,7 @@ export default function App() {
           <div className="px-4 py-2 border border-slate-200 rounded-lg flex items-center gap-6 bg-slate-50">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Style</span>
-               <span className="text-sm font-semibold text-slate-800">{state.grid.pageName || 'A4'}</span>
+               <span className="text-sm font-semibold text-slate-800">{state.grid.pageName || 'A4'} ({state.grid.pageWidth || 210} x {state.grid.pageHeight || 297} mm)</span>
             </div>
             <div className="w-px h-4 bg-slate-300" />
             <div className="flex items-center gap-2">
@@ -658,10 +788,6 @@ export default function App() {
                 })}
               </div>
             </div>
-            
-            <div className="absolute bottom-4 right-4 text-xs font-semibold text-slate-500 print:hidden">
-               Page 1/1
-            </div>
           </div>
             </div>
           </div>
@@ -702,7 +828,12 @@ export default function App() {
           >
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 sticky top-0 z-10">
                <h2 className="font-semibold text-lg text-slate-800">Paper Style Configuration</h2>
-               <button onClick={() => setIsPaperStyleOpen(false)} className="text-slate-400 hover:text-slate-600 transition"><X className="w-5 h-5" /></button>
+               <button onClick={() => {
+                 setPendingTemplateGrid(null);
+                 setTemplateNameDraft('');
+                 setTemplateNameError('');
+                 setIsPaperStyleOpen(false);
+               }} className="text-slate-400 hover:text-slate-600 transition"><X className="w-5 h-5" /></button>
             </div>
             
             <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -765,23 +896,25 @@ export default function App() {
                {/* Controls Side */}
                <div className="col-span-2 space-y-6">
                   
-                  <div className="flex gap-4">
-                    <div className="flex-1">
-                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Style Template</label>
-                      <select 
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
-                        value={`${draftGrid.pageName},${draftGrid.pageWidth},${draftGrid.pageHeight}`}
-                        onChange={e => {
-                          const [pageName, w, h] = e.target.value.split(',');
-                          setDraftGrid(prev => prev ? ({...prev, pageName, pageWidth: parseFloat(w), pageHeight: parseFloat(h) }) : prev);
-                        }}
-                      >
-                         <option value="A4,210,297">A4 (210 x 297 mm)</option>
-                         <option value="Letter,215.9,279.4">Letter (216 x 279 mm)</option>
-                         <option value="Legal,215.9,355.6">Legal (216 x 356 mm)</option>
-                         <option value="4x6,101.6,152.4">4x6" (101.6 x 152.4 mm)</option>
-                      </select>
-                    </div>
+                  <div className="mb-6">
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Style Template</label>
+                    <select 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
+                      value={(BUILT_IN_TEMPLATES.some(t => t.id === draftGrid.id) && !state.savedTemplates.some(template => gridsMatch(template, draftGrid))) ? 'custom' : draftGrid.id}
+                      onChange={e => {
+                        const selectedTemplate = state.savedTemplates.find(template => template.id === e.target.value);
+                        if (selectedTemplate) setDraftGrid({ ...selectedTemplate });
+                      }}
+                    >
+                       {(BUILT_IN_TEMPLATES.some(t => t.id === draftGrid.id) && !state.savedTemplates.some(template => gridsMatch(template, draftGrid))) && (
+                         <option value="custom">Unsaved changes</option>
+                       )}
+                       {state.savedTemplates.map(template => (
+                         <option key={template.id} value={template.id}>
+                           {template.name} ({template.pageWidth || 210} x {template.pageHeight || 297} mm)
+                         </option>
+                       ))}
+                    </select>
                   </div>
 
                   <div className="grid grid-cols-2 gap-6">
@@ -791,11 +924,15 @@ export default function App() {
                       <div className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
                          <div className="flex justify-between items-center text-sm">
                             <span className="text-slate-600 font-medium">Page Width</span>
-                            <div className="flex items-center gap-2"><input type="number" readOnly className="w-20 px-2 py-1 rounded bg-slate-100 border border-slate-200 text-right text-slate-500" value={draftGrid.pageWidth || 210} /> mm</div>
+                            <div className="flex items-center gap-2">
+                              <DraftInput value={draftGrid.pageWidth || 210} onChange={v => setDraftGrid(p => p ? ({...p, pageName: 'Custom', pageWidth: Math.max(1, v)}) : p)} /> mm
+                            </div>
                          </div>
                          <div className="flex justify-between items-center text-sm">
                             <span className="text-slate-600 font-medium">Page Height</span>
-                            <div className="flex items-center gap-2"><input type="number" readOnly className="w-20 px-2 py-1 rounded bg-slate-100 border border-slate-200 text-right text-slate-500" value={draftGrid.pageHeight || 297} /> mm</div>
+                            <div className="flex items-center gap-2">
+                              <DraftInput value={draftGrid.pageHeight || 297} onChange={v => setDraftGrid(p => p ? ({...p, pageName: 'Custom', pageHeight: Math.max(1, v)}) : p)} /> mm
+                            </div>
                          </div>
                          <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-200">
                             <span className="text-slate-600 font-medium">Top Margin</span>
@@ -865,18 +1002,83 @@ export default function App() {
             
             <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-100 sticky bottom-0 z-10">
                <button 
-                  onClick={() => {
-                     setState(prev => ({
-                       ...prev,
-                       grid: draftGrid,
-                       cells: pruneCellsToGrid(prev.cells, draftGrid)
-                     }));
-                     setIsPaperStyleOpen(false);
-                  }} 
+                  onClick={applyPaperStyle} 
                   className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition shadow-sm"
                >
                   Save & Apply
                </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {pendingTemplateGrid && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4 print:hidden">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+          >
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <h2 className="font-semibold text-lg text-slate-800">Save Paper Style</h2>
+              <button
+                onClick={() => {
+                  setPendingTemplateGrid(null);
+                  setTemplateNameDraft('');
+                  setTemplateNameError('');
+                }}
+                className="text-slate-400 hover:text-slate-600 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">
+                  Paper Style Name
+                </label>
+                <input
+                  autoFocus
+                  value={templateNameDraft}
+                  onChange={e => {
+                    setTemplateNameDraft(e.target.value);
+                    setTemplateNameError('');
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveNamedPaperStyle();
+                  }}
+                  className={`w-full px-3 py-2.5 rounded-lg border text-sm font-medium outline-none transition ${
+                    templateNameError
+                      ? 'border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/10'
+                      : 'border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20'
+                  }`}
+                />
+                {templateNameError && (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-red-600">
+                    <AlertCircle className="w-4 h-4" /> {templateNameError}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-100">
+              <button
+                onClick={() => {
+                  setPendingTemplateGrid(null);
+                  setTemplateNameDraft('');
+                  setTemplateNameError('');
+                }}
+                className="px-5 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-sm font-semibold text-slate-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveNamedPaperStyle}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition shadow-sm"
+              >
+                Save & Apply
+              </button>
             </div>
           </motion.div>
         </div>
