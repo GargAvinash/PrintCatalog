@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Guide | How to use PrintCatalog</title>
+    <link rel="icon" href="./assets/app-icon.png" />
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .sub-page-hero {
+        padding: 100px 0 60px;
+        width: min(1120px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+      .sub-page-hero h1 { font-size: 48px; margin-bottom: 20px; }
+      .sub-page-hero p { font-size: 20px; color: var(--muted); max-width: 700px; }
+      
+      .guide-steps {
+        width: min(1120px, calc(100% - 40px));
+        margin: 0 auto 100px;
+        display: flex;
+        flex-direction: column;
+        gap: 80px;
+      }
+      .step {
+        display: grid;
+        grid-template-columns: 80px 1fr 1fr;
+        gap: 40px;
+        align-items: center;
+      }
+      .step-number {
+        font-size: 64px;
+        font-weight: 900;
+        color: var(--soft);
+        line-height: 1;
+      }
+      .step-content h2 { font-size: 32px; margin: 0 0 16px; }
+      .step-content p { font-size: 18px; line-height: 1.6; color: var(--muted); }
+      .step-visual {
+        background: #fff;
+        aspect-ratio: 16/10;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .step-visual img { width: 100%; height: 100%; object-fit: cover; }
+
+      @media (max-width: 880px) {
+        .step { grid-template-columns: 1fr; gap: 20px; }
+        .step-number { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="PrintCatalog home">
+        <img src="./assets/app-icon.png" alt="" />
+        <span>PrintCatalog</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="index.html#features">Features</a>
+        <a href="guide.html" style="color: var(--blue)">Guide</a>
+        <a href="developers.html">Developers</a>
+        <a href="index.html#download" class="nav-cta">Download</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="sub-page-hero">
+        <p class="eyebrow">Quick Start Guide</p>
+        <h1>Master Your Layouts</h1>
+        <p>Get from a folder of photos to a perfectly printed sheet in under 60 seconds.</p>
+      </section>
+
+      <div class="guide-steps">
+        <div class="step">
+          <div class="step-number">01</div>
+          <div class="step-content">
+            <h2>Define Your Paper</h2>
+            <p>Click "Paper Style" to set your page dimensions and grid matrix. You can save these as templates for future use (e.g., "A4 5x5 Grid" or "4x6 Portrait").</p>
+          </div>
+          <div class="step-visual" style="background: var(--soft)">
+              <div style="width: 60%; height: 70%; background: #fff; border: 1px dashed var(--muted); border-radius: 4px;"></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">02</div>
+          <div class="step-content">
+            <h2>Import Photos</h2>
+            <p>Click "Add Photos" to load your high-resolution image files into the catalog. Don't worry about cropping yet—you can adjust that later.</p>
+          </div>
+          <div class="step-visual" style="background: var(--soft); gap: 10px; flex-wrap: wrap; padding: 20px;">
+              <div style="width: 40px; height: 40px; background: #fff; border-radius: 4px;"></div>
+              <div style="width: 40px; height: 40px; background: #fff; border-radius: 4px;"></div>
+              <div style="width: 40px; height: 40px; background: #fff; border-radius: 4px;"></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">03</div>
+          <div class="step-content">
+            <h2>Stamp the Grid</h2>
+            <p>Select a photo from the catalog, choose an <strong>Apply Range</strong> (Cell, Row, or After), and click the grid to fill it. Use "Clear" mode to remove mistakes just as easily.</p>
+          </div>
+          <div class="step-visual" style="background: var(--blue); color: #fff; font-weight: 800; font-size: 24px;">
+              CLICK!
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-number">04</div>
+          <div class="step-content">
+            <h2>Print Direct</h2>
+            <p>Click "Print Direct." Select your printer and hardware options (like paper quality) in the native Windows dialog. The app will send the original pixel data for maximum sharpness.</p>
+          </div>
+          <div class="step-visual" style="background: var(--ink); color: #fff; font-weight: 800; font-size: 24px;">
+              🖨️ PRINTING
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <div class="footer-content">
+        <div class="footer-brand">
+          <img src="./assets/app-icon.png" alt="" />
+          <span>PrintCatalog</span>
+        </div>
+        <div class="footer-links">
+          <a href="guide.html">User Guide</a>
+          <a href="developers.html">Developer Info</a>
+          <a href="https://github.com/GargAvinash/PrintCatalog" rel="noreferrer">GitHub Source</a>
+        </div>
+        <div class="footer-copyright">
+          <span>&copy; 2026 PrintCatalog by Avinash Garg</span>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -72,9 +72,21 @@ nav {
   font-weight: 650;
 }
 
-nav a:hover,
+nav a:not(.nav-cta):hover,
 footer a:hover {
   color: var(--blue);
+}
+
+.nav-cta {
+  background: var(--blue);
+  color: #fff !important;
+  padding: 8px 16px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.nav-cta:hover {
+  background: var(--blue-dark);
 }
 
 .hero {
@@ -83,7 +95,7 @@ footer a:hover {
   align-items: center;
   gap: 72px;
   width: min(1120px, calc(100% - 40px));
-  min-height: calc(100vh - 70px);
+  min-height: calc(100vh - 120px);
   margin: 0 auto;
   padding: 46px 0 78px;
 }
@@ -258,7 +270,7 @@ h1 {
 }
 
 .features article {
-  min-height: 220px;
+  min-height: 180px;
   padding: 26px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -266,15 +278,14 @@ h1 {
   box-shadow: 0 18px 45px rgba(18, 43, 64, 0.06);
 }
 
-.features span {
-  color: var(--green);
-  font-size: 13px;
-  font-weight: 900;
+.feature-icon {
+  font-size: 24px;
+  margin-bottom: 20px;
 }
 
 .features h2 {
-  margin: 42px 0 12px;
-  font-size: 22px;
+  margin: 0 0 12px;
+  font-size: 20px;
   line-height: 1.2;
   letter-spacing: 0;
 }
@@ -282,24 +293,111 @@ h1 {
 .features p {
   margin: 0;
   color: var(--muted);
-  line-height: 1.65;
+  line-height: 1.6;
+  font-size: 15px;
+}
+
+.quality-focus {
+  background: var(--ink);
+  color: #fff;
+  padding: 100px 0;
+  margin-top: 40px;
+}
+
+.quality-focus .content {
+  width: min(1120px, calc(100% - 40px));
+  margin: 0 auto;
+  max-width: 800px;
+  text-align: center;
+}
+
+.quality-focus h2 {
+  font-size: 42px;
+  margin: 0 0 24px;
+}
+
+.quality-focus p {
+  font-size: 20px;
+  color: #aebdca;
+  line-height: 1.6;
+  margin-bottom: 48px;
+}
+
+.quality-list {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex-wrap: wrap;
+}
+
+.quality-list li {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 20px 30px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 16px;
+}
+
+.quality-list li strong {
+  display: block;
+  color: var(--blue);
+  margin-bottom: 4px;
 }
 
 footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
   width: min(1120px, calc(100% - 40px));
   margin: 0 auto;
-  padding: 28px 0 36px;
-  border-top: 1px solid var(--line);
+  padding: 60px 0 40px;
+}
+
+.footer-content {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 60px;
+  align-items: start;
+}
+
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.footer-brand img {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.footer-links a {
   color: var(--muted);
   font-size: 14px;
+  font-weight: 600;
+}
+
+.footer-copyright {
+  grid-column: 1 / -1;
+  padding-top: 40px;
+  margin-top: 40px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
 }
 
 @media (max-width: 880px) {
   .site-header {
-    align-items: flex-start;
+    align-items: center;
   }
 
   nav {
@@ -312,14 +410,41 @@ footer {
     grid-template-columns: 1fr;
     gap: 30px;
     padding-top: 44px;
+    text-align: center;
+  }
+
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .hero-actions {
+    justify-content: center;
   }
 
   .product-shot {
     min-height: 430px;
+    justify-content: center;
   }
 
   .features {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .footer-content {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .features {
     grid-template-columns: 1fr;
+  }
+  
+  .quality-list {
+    flex-direction: column;
+    gap: 16px;
   }
 }
 
@@ -331,13 +456,13 @@ footer {
     width: min(100% - 28px, 1120px);
   }
 
-  .site-header,
-  footer {
+  .site-header {
     flex-direction: column;
+    gap: 16px;
   }
 
   nav {
-    justify-content: flex-start;
+    justify-content: center;
   }
 
   .lead {
@@ -346,6 +471,7 @@ footer {
 
   .hero-actions {
     flex-direction: column;
+    width: 100%;
   }
 
   .primary-button,
@@ -364,5 +490,10 @@ footer {
 
   .product-shot {
     min-height: auto;
+  }
+
+  .footer-content {
+    grid-template-columns: 1fr;
+    gap: 32px;
   }
 }

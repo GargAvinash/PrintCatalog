@@ -13,14 +13,15 @@
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="#top" aria-label="PrintCatalog home">
+      <a class="brand" href="index.html" aria-label="PrintCatalog home">
         <img src="./assets/app-icon.png" alt="" />
         <span>PrintCatalog</span>
       </a>
       <nav aria-label="Main navigation">
-        <a href="#features">Features</a>
-        <a href="#download">Download</a>
-        <a href="https://github.com/GargAvinash/PrintCatalog" rel="noreferrer">GitHub</a>
+        <a href="index.html#features">Features</a>
+        <a href="guide.html">Guide</a>
+        <a href="developers.html">Developers</a>
+        <a href="#download" class="nav-cta">Download</a>
       </nav>
     </header>
 
@@ -73,26 +74,65 @@
 
       <section class="features" id="features" aria-label="PrintCatalog features">
         <article>
-          <span>01</span>
-          <h2>Precise grid control</h2>
-          <p>Set rows, columns, margins, gaps, paper size, and cell dimensions in millimeters.</p>
+          <div class="feature-icon">🎯</div>
+          <h2>Precise Grid Control</h2>
+          <p>Set rows, columns, margins, and cell dimensions in millimeters with sub-millimeter precision.</p>
         </article>
         <article>
-          <span>02</span>
-          <h2>Per-photo placement</h2>
-          <p>Choose cover or contain, rotate photos, set alignment, and add outlines for cutting guides.</p>
+          <div class="feature-icon">⚡</div>
+          <h2>Apply Range</h2>
+          <p>Fill cells, entire rows, or the whole page in a single click. Massive time savings for passport photos.</p>
         </article>
         <article>
-          <span>03</span>
-          <h2>Native printing</h2>
-          <p>Bypasses browser printing and sends high-resolution image data directly to Windows printers.</p>
+          <div class="feature-icon">📁</div>
+          <h2>Template Library</h2>
+          <p>Save your favorite grid layouts and paper styles to reuse them instantly in future sessions.</p>
         </article>
+        <article>
+          <div class="feature-icon">🖼️</div>
+          <h2>Per-Photo Tuning</h2>
+          <p>Rotate photos, choose scaling modes (Cover/Contain), and set alignment for every single cell.</p>
+        </article>
+        <article>
+          <div class="feature-icon">✂️</div>
+          <h2>Cutting Guides</h2>
+          <p>Enable inward-stroke outlines to create perfect, crisp cutting guides for your photo sheets.</p>
+        </article>
+        <article>
+          <div class="feature-icon">🖨️</div>
+          <h2>Native Quality</h2>
+          <p>Bypasses browser limits to send high-res image data directly to the Win32 GDI print spooler.</p>
+        </article>
+      </section>
+
+      <section class="quality-focus">
+        <div class="content">
+          <h2>Why GDI Printing?</h2>
+          <p>Most web-based tools struggle with exact sizing and resolution when printing. PrintCatalog uses the native Windows GDI (Graphics Device Interface) pipeline to communicate directly with your printer hardware.</p>
+          <ul class="quality-list">
+            <li><strong>Pixel Perfect:</strong> No browser-based downscaling or compression.</li>
+            <li><strong>Hardware Direct:</strong> Native DEVMODE support for custom paper sizes.</li>
+            <li><strong>Interpolation:</strong> Professional-grade HALFTONE scaling for sharp results.</li>
+          </ul>
+        </div>
       </section>
     </main>
 
     <footer>
-      <span>PrintCatalog by Avinash Garg</span>
-      <a href="https://github.com/GargAvinash/PrintCatalog" rel="noreferrer">Source on GitHub</a>
+      <div class="footer-content">
+        <div class="footer-brand">
+          <img src="./assets/app-icon.png" alt="" />
+          <span>PrintCatalog</span>
+        </div>
+        <div class="footer-links">
+          <a href="guide.html">User Guide</a>
+          <a href="developers.html">Developer Info</a>
+          <a href="https://github.com/GargAvinash/PrintCatalog" rel="noreferrer">GitHub Source</a>
+        </div>
+        <div class="footer-copyright">
+          <span>&copy; 2026 PrintCatalog by Avinash Garg</span>
+        </div>
+      </div>
     </footer>
   </body>
 </html>
