@@ -3,12 +3,17 @@
 /// Sends original-resolution images directly to the printer.
 /// The printer driver handles all DPI mapping and scaling.
 /// Uses source-crop StretchDIBits for cover/contain and GDI vector outlines.
-use crate::{PrintJob, PrinterInfo};
+use crate::{GridConfig, PrintJob, PrinterInfo};
 use std::ffi::CString;
-use windows::Win32::Foundation::COLORREF;
+use windows::Win32::Foundation::{GlobalFree, COLORREF, HGLOBAL};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::Graphics::Printing::*;
-use windows::Win32::Storage::Xps::*;
+use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::Storage::Xps::{DOCINFOA, EndDoc, EndPage, StartDocA, StartPage};
+use windows::Win32::UI::Controls::Dialogs::{
+    CommDlgExtendedError, PrintDlgA, DEVNAMES, PD_HIDEPRINTTOFILE, PD_NOPAGENUMS, PD_NOSELECTION,
+    PD_RETURNDC, PRINTDLGA,
+};
 use windows::core::{PCSTR, PSTR};
 
 /// List all available printers on the system
@@ -169,104 +174,167 @@ fn compute_image_placement(
     }
 }
 
+fn get_printer_name(printer_name: &str) -> Result<String, String> {
+    unsafe {
+        if !printer_name.is_empty() {
+            return Ok(printer_name.to_string());
+        }
+
+        let mut default_name_buf = vec![0u8; 512];
+        let mut default_size = default_name_buf.len() as u32;
+        if GetDefaultPrinterA(Some(PSTR(default_name_buf.as_mut_ptr())), &mut default_size).0 == 0
+        {
+            return Err("No default printer found".to_string());
+        }
+
+        let end = default_name_buf.iter().position(|&b| b == 0).unwrap_or(0);
+        Ok(String::from_utf8_lossy(&default_name_buf[..end]).to_string())
+    }
+}
+
+fn create_devnames(printer_name: &str) -> Result<HGLOBAL, String> {
+    unsafe {
+        let driver_name = b"winspool\0";
+        let device_name = CString::new(printer_name)
+            .map_err(|e| format!("Invalid printer name: {}", e))?
+            .into_bytes_with_nul();
+        let output_name = b"\0";
+
+        let header_size = std::mem::size_of::<DEVNAMES>();
+        let total_size = header_size + driver_name.len() + device_name.len() + output_name.len();
+        let hdevnames = GlobalAlloc(GMEM_MOVEABLE, total_size)
+            .map_err(|e| format!("Unable to allocate printer names: {}", e))?;
+        let ptr = GlobalLock(hdevnames) as *mut u8;
+        if ptr.is_null() {
+            let _ = GlobalFree(Some(hdevnames));
+            return Err("Unable to lock printer names".to_string());
+        }
+
+        let header = ptr as *mut DEVNAMES;
+        (*header).wDriverOffset = header_size as u16;
+        (*header).wDeviceOffset = (header_size + driver_name.len()) as u16;
+        (*header).wOutputOffset = (header_size + driver_name.len() + device_name.len()) as u16;
+        (*header).wDefault = 0;
+
+        std::ptr::copy_nonoverlapping(driver_name.as_ptr(), ptr.add(header_size), driver_name.len());
+        std::ptr::copy_nonoverlapping(
+            device_name.as_ptr(),
+            ptr.add(header_size + driver_name.len()),
+            device_name.len(),
+        );
+        std::ptr::copy_nonoverlapping(
+            output_name.as_ptr(),
+            ptr.add(header_size + driver_name.len() + device_name.len()),
+            output_name.len(),
+        );
+
+        let _ = GlobalUnlock(hdevnames);
+        Ok(hdevnames)
+    }
+}
+
+fn create_custom_page_devmode(grid: &GridConfig, printer_name: &str) -> Result<HGLOBAL, String> {
+    unsafe {
+        let c_name =
+            CString::new(printer_name).map_err(|e| format!("Invalid printer name: {}", e))?;
+        let printer_pcstr = PCSTR(c_name.as_ptr() as *const u8);
+
+        let dm_size =
+            DocumentPropertiesA(None, PRINTER_HANDLE::default(), printer_pcstr, None, None, 0);
+        if dm_size <= 0 {
+            return Err("Unable to read default printer settings".to_string());
+        }
+
+        let hdevmode = GlobalAlloc(GMEM_MOVEABLE, dm_size as usize)
+            .map_err(|e| format!("Unable to allocate printer settings: {}", e))?;
+        let devmode_ptr = GlobalLock(hdevmode) as *mut DEVMODEA;
+        if devmode_ptr.is_null() {
+            let _ = GlobalFree(Some(hdevmode));
+            return Err("Unable to lock printer settings".to_string());
+        }
+
+        let got = DocumentPropertiesA(
+            None,
+            PRINTER_HANDLE::default(),
+            printer_pcstr,
+            Some(devmode_ptr),
+            None,
+            2, // DM_OUT_BUFFER
+        );
+        if got < 0 {
+            let _ = GlobalUnlock(hdevmode);
+            let _ = GlobalFree(Some(hdevmode));
+            return Err("Unable to load default printer settings".to_string());
+        }
+
+        (*devmode_ptr).dmFields |= DM_PAPERSIZE | DM_PAPERLENGTH | DM_PAPERWIDTH;
+        (*devmode_ptr).Anonymous1.Anonymous1.dmPaperSize = 0;
+        (*devmode_ptr).Anonymous1.Anonymous1.dmPaperWidth =
+            (grid.page_width * 10.0).round() as i16;
+        (*devmode_ptr).Anonymous1.Anonymous1.dmPaperLength =
+            (grid.page_height * 10.0).round() as i16;
+
+        let _ = GlobalUnlock(hdevmode);
+        Ok(hdevmode)
+    }
+}
+
+fn show_print_dialog(grid: &GridConfig, printer_name: &str) -> Result<HDC, String> {
+    unsafe {
+        let resolved_printer = get_printer_name(printer_name)?;
+        let hdevmode = create_custom_page_devmode(grid, &resolved_printer)?;
+        let hdevnames = create_devnames(&resolved_printer)?;
+        let mut dialog = PRINTDLGA {
+            lStructSize: std::mem::size_of::<PRINTDLGA>() as u32,
+            hDevMode: hdevmode,
+            hDevNames: hdevnames,
+            Flags: PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS | PD_HIDEPRINTTOFILE,
+            nMinPage: 1,
+            nMaxPage: 1,
+            nFromPage: 1,
+            nToPage: 1,
+            nCopies: 1,
+            ..Default::default()
+        };
+
+        if PrintDlgA(&mut dialog).as_bool() {
+            if !dialog.hDevMode.is_invalid() {
+                let _ = GlobalFree(Some(dialog.hDevMode));
+            }
+            if !dialog.hDevNames.is_invalid() {
+                let _ = GlobalFree(Some(dialog.hDevNames));
+            }
+
+            if dialog.hDC.is_invalid() {
+                return Err("Print dialog did not return a printer device context".to_string());
+            }
+
+            return Ok(dialog.hDC);
+        }
+
+        let err = CommDlgExtendedError().0;
+        if !dialog.hDevMode.is_invalid() {
+            let _ = GlobalFree(Some(dialog.hDevMode));
+        }
+        if !dialog.hDevNames.is_invalid() {
+            let _ = GlobalFree(Some(dialog.hDevNames));
+        }
+
+        if err == 0 {
+            Err("Print cancelled".to_string())
+        } else {
+            Err(format!("Print dialog failed with error {}", err))
+        }
+    }
+}
+
 /// Send the print job directly to a printer via Win32 GDI.
 pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
     let grid = &job.grid;
 
     unsafe {
         // --- 1. Get printer DC ---
-        let c_name = if printer_name.is_empty() {
-            let mut buf = vec![0u8; 512];
-            let mut size = buf.len() as u32;
-            if GetDefaultPrinterA(Some(PSTR(buf.as_mut_ptr())), &mut size).0 == 0 {
-                return Err("No default printer found".to_string());
-            }
-            let end = buf.iter().position(|&b| b == 0).unwrap_or(0);
-            CString::new(&buf[..end]).map_err(|e| format!("Invalid printer name: {}", e))?
-        } else {
-            CString::new(printer_name).map_err(|e| format!("Invalid printer name: {}", e))?
-        };
-
-        let printer_pcstr = PCSTR(c_name.as_ptr() as *const u8);
-
-        // --- Set custom paper size via DEVMODE ---
-        // DEVMODEA has complex unions in the windows crate, so we manipulate
-        // the raw bytes at the well-defined Microsoft ABI offsets:
-        //   offset 40: dmFields (u32)
-        //   offset 46: dmPaperSize (i16)
-        //   offset 48: dmPaperLength (i16)  — in tenths of mm
-        //   offset 50: dmPaperWidth (i16)   — in tenths of mm
-        const DEVMODE_OFFSET_FIELDS: usize = 40;
-        const DEVMODE_OFFSET_PAPER_SIZE: usize = 46;
-        const DEVMODE_OFFSET_PAPER_LENGTH: usize = 48;
-        const DEVMODE_OFFSET_PAPER_WIDTH: usize = 50;
-        const DM_PAPERSIZE: u32 = 0x0002;
-        const DM_PAPERLENGTH: u32 = 0x0004;
-        const DM_PAPERWIDTH: u32 = 0x0008;
-
-        // Query DEVMODE buffer size
-        let dm_size = DocumentPropertiesA(
-            None,
-            PRINTER_HANDLE::default(),
-            printer_pcstr,
-            None,
-            None,
-            0,
-        );
-
-        let hdc = if dm_size > 0 {
-            let mut dm_buf = vec![0u8; dm_size as usize];
-
-            // Fill with printer defaults
-            let got = DocumentPropertiesA(
-                None,
-                PRINTER_HANDLE::default(),
-                printer_pcstr,
-                Some(dm_buf.as_mut_ptr() as *mut _),
-                None,
-                2, // DM_OUT_BUFFER
-            );
-
-            if got >= 0 && dm_buf.len() >= 52 {
-                // Set custom paper: DMPAPER_USER = 0 (custom size)
-                let paper_w_tenths = (grid.page_width * 10.0).round() as i16;
-                let paper_h_tenths = (grid.page_height * 10.0).round() as i16;
-
-                // Update dmFields
-                let fields_ptr = dm_buf.as_mut_ptr().add(DEVMODE_OFFSET_FIELDS) as *mut u32;
-                *fields_ptr |= DM_PAPERSIZE | DM_PAPERLENGTH | DM_PAPERWIDTH;
-
-                // dmPaperSize = 0 (custom)
-                let ps_ptr = dm_buf.as_mut_ptr().add(DEVMODE_OFFSET_PAPER_SIZE) as *mut i16;
-                *ps_ptr = 0;
-
-                // dmPaperLength = height in tenths of mm
-                let pl_ptr = dm_buf.as_mut_ptr().add(DEVMODE_OFFSET_PAPER_LENGTH) as *mut i16;
-                *pl_ptr = paper_h_tenths;
-
-                // dmPaperWidth = width in tenths of mm
-                let pw_ptr = dm_buf.as_mut_ptr().add(DEVMODE_OFFSET_PAPER_WIDTH) as *mut i16;
-                *pw_ptr = paper_w_tenths;
-
-                println!(
-                    "[Printer] DEVMODE: custom paper {}x{} tenths-mm",
-                    paper_w_tenths, paper_h_tenths
-                );
-
-                CreateDCA(
-                    PCSTR::null(),
-                    printer_pcstr,
-                    PCSTR::null(),
-                    Some(dm_buf.as_ptr() as *const _),
-                )
-            } else {
-                println!("[Printer] Warning: DEVMODE query failed, using printer defaults");
-                CreateDCA(PCSTR::null(), printer_pcstr, PCSTR::null(), None)
-            }
-        } else {
-            println!("[Printer] Warning: DocumentProperties unavailable, using defaults");
-            CreateDCA(PCSTR::null(), printer_pcstr, PCSTR::null(), None)
-        };
+        let hdc = show_print_dialog(grid, printer_name)?;
 
         if hdc.is_invalid() {
             return Err("Failed to create printer device context".to_string());

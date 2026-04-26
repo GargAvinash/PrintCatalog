@@ -338,6 +338,7 @@ export default function App() {
       });
       setPrintStatus({ type: 'success', message: result });
     } catch (err: any) {
+      if (String(err) === 'Print cancelled') return;
       setPrintStatus({ type: 'error', message: String(err) });
     } finally {
       setIsPrinting(false);
@@ -421,7 +422,7 @@ export default function App() {
           >
             <LayoutGrid className="w-4 h-4 text-blue-600" /> Paper Style
           </button>
-          
+
           {/* Printer selector */}
           <select
             value={selectedPrinter}
@@ -435,7 +436,7 @@ export default function App() {
               </option>
             ))}
           </select>
-
+          
           <button 
             onClick={handlePrint}
             disabled={isPrinting}
@@ -446,7 +447,7 @@ export default function App() {
             {isPrinting ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Printing...</>
             ) : (
-              <><Printer className="w-4 h-4" /> Print Direct</>
+              <><Printer className="w-4 h-4" /> Print...</>
             )}
           </button>
         </div>
