@@ -170,6 +170,58 @@ const templateNameExists = (templates: GridConfig[], name: string) => (
   templates.some(template => template.name.trim().toLowerCase() === name.trim().toLowerCase())
 );
 
+// --- IndexedDB Image Storage ---
+
+const DB_NAME = 'PrestoPrintPro';
+const DB_VERSION = 1;
+const STORE_NAME = 'images';
+
+const initDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e: any) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+};
+
+const saveImagesToDB = async (images: ImageAsset[]) => {
+  try {
+    const db = await initDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    store.clear();
+    images.forEach(img => store.put(img));
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error("Failed to save images to IndexedDB:", e);
+  }
+};
+
+const loadImagesFromDB = async (): Promise<ImageAsset[]> => {
+  try {
+    const db = await initDB();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.error("Failed to load images from IndexedDB:", e);
+    return [];
+  }
+};
+
 // --- Components ---
 
 function DraftInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
@@ -251,9 +303,29 @@ export default function App() {
       })
       .catch(err => console.error('Failed to list printers:', err));
   }, []);
-
+  // Load images from IndexedDB on mount
   useEffect(() => {
-    localStorage.setItem('presto_print_pro_state_v3', JSON.stringify(state));
+    loadImagesFromDB().then(dbImages => {
+      if (dbImages && dbImages.length > 0) {
+        setState(prev => {
+          const existingIds = new Set(prev.images.map(img => img.id));
+          const newImages = dbImages.filter(img => !existingIds.has(img.id));
+          if (newImages.length === 0) return prev;
+          return { ...prev, images: [...prev.images, ...newImages] };
+        });
+      }
+    });
+  }, []);
+
+  // Sync state to LocalStorage and images to IndexedDB
+  useEffect(() => {
+    try {
+      const stateToSave = { ...state, images: [] };
+      localStorage.setItem('presto_print_pro_state_v3', JSON.stringify(stateToSave));
+    } catch (e) {
+      console.error("Failed to save state to localStorage:", e);
+    }
+    saveImagesToDB(state.images).catch(console.error);
   }, [state]);
 
   // --- Handlers ---
@@ -296,6 +368,10 @@ export default function App() {
       return { ...prev, images: newImages, cells: newCells, imageConfigs: newConfigs, selectedImageId: prev.selectedImageId === id ? null : prev.selectedImageId };
     });
   };
+
+
+
+
 
   const getApplyRangeKeys = (key: string, grid: GridConfig) => {
     const { row, col } = parseCellKey(key);
