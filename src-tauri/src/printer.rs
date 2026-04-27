@@ -14,6 +14,7 @@ use windows::Win32::UI::Controls::Dialogs::{
     CommDlgExtendedError, PrintDlgA, DEVNAMES, PD_HIDEPRINTTOFILE, PD_NOPAGENUMS, PD_NOSELECTION,
     PD_RETURNDC, PRINTDLGA,
 };
+use windows::Win32::UI::ColorSystem::SetICMMode;
 use windows::core::{PCSTR, PSTR};
 
 /// List all available printers on the system
@@ -363,16 +364,29 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
 
         // High-quality scaling mode
         SetStretchBltMode(hdc, HALFTONE);
+        let _ = SetBrushOrgEx(hdc, 0, 0, None);
+        SetICMMode(hdc, windows::Win32::UI::ColorSystem::ICM_MODE(2));
+
+        let mut ca = windows::Win32::Graphics::Gdi::COLORADJUSTMENT::default();
+        let _ = windows::Win32::Graphics::Gdi::GetColorAdjustment(hdc, &mut ca);
+        ca.caRedGamma = 10000;
+        ca.caGreenGamma = 10000;
+        ca.caBlueGamma = 10000;
+        ca.caBrightness = 0;
+        ca.caContrast = 0;
+        ca.caReferenceBlack = 0;
+        ca.caReferenceWhite = 10000;
+        let _ = windows::Win32::Graphics::Gdi::SetColorAdjustment(hdc, &ca);
 
         // --- 3. Printer physical dimensions ---
-        let printer_w = GetDeviceCaps(Some(hdc), HORZRES);
-        let printer_h = GetDeviceCaps(Some(hdc), VERTRES);
-        let scale_x = printer_w as f64 / grid.page_width;
-        let scale_y = printer_h as f64 / grid.page_height;
+        let log_pixels_x = GetDeviceCaps(Some(hdc), LOGPIXELSX);
+        let log_pixels_y = GetDeviceCaps(Some(hdc), LOGPIXELSY);
+        let scale_x = log_pixels_x as f64 / 25.4;
+        let scale_y = log_pixels_y as f64 / 25.4;
 
         println!(
-            "[Printer] Page: {}x{} mm → {}x{} device units ({:.1}x{:.1} px/mm)",
-            grid.page_width, grid.page_height, printer_w, printer_h, scale_x, scale_y
+            "[Printer] Page: {}x{} mm → DPI: {}x{} ({:.1}x{:.1} px/mm)",
+            grid.page_width, grid.page_height, log_pixels_x, log_pixels_y, scale_x, scale_y
         );
 
         // --- 4. Draw each cell ---
