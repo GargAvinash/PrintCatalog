@@ -14,7 +14,6 @@ use windows::Win32::UI::Controls::Dialogs::{
     CommDlgExtendedError, PrintDlgA, DEVNAMES, PD_HIDEPRINTTOFILE, PD_NOPAGENUMS, PD_NOSELECTION,
     PD_RETURNDC, PRINTDLGA,
 };
-use windows::Win32::UI::ColorSystem::SetICMMode;
 use windows::core::{PCSTR, PSTR};
 
 /// List all available printers on the system
@@ -409,18 +408,6 @@ pub fn print_job(job: &PrintJob, printer_name: &str, hwnd: Option<usize>) -> Res
         // High-quality scaling mode
         SetStretchBltMode(hdc, HALFTONE);
         let _ = SetBrushOrgEx(hdc, 0, 0, None);
-        SetICMMode(hdc, windows::Win32::UI::ColorSystem::ICM_MODE(2));
-
-        let mut ca = windows::Win32::Graphics::Gdi::COLORADJUSTMENT::default();
-        let _ = windows::Win32::Graphics::Gdi::GetColorAdjustment(hdc, &mut ca);
-        ca.caRedGamma = 10000;
-        ca.caGreenGamma = 10000;
-        ca.caBlueGamma = 10000;
-        ca.caBrightness = 0;
-        ca.caContrast = 0;
-        ca.caReferenceBlack = 0;
-        ca.caReferenceWhite = 10000;
-        let _ = windows::Win32::Graphics::Gdi::SetColorAdjustment(hdc, &ca);
 
         // --- 3. Printer physical dimensions ---
         let log_pixels_x = GetDeviceCaps(Some(hdc), LOGPIXELSX);
