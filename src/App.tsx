@@ -295,7 +295,7 @@ export default function App() {
 
   // Fetch printers on mount
   useEffect(() => {
-    invoke<{name: string; is_default: boolean}[]>('list_printers')
+    invoke<{name: string; is_default: boolean}[]>('cmd_list_printers')
       .then(list => {
         setPrinters(list);
         const def = list.find(p => p.is_default);
@@ -529,7 +529,7 @@ export default function App() {
     setPrintStatus(null);
 
     try {
-      const result = await invoke<string>('print_direct', {
+      const result = await invoke<string>('cmd_print_direct', {
         job: {
           grid: {
             rows: state.grid.rows,

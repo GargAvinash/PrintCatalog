@@ -51,27 +51,44 @@ pub struct PrinterInfo {
 
 /// List available system printers
 #[tauri::command]
-fn list_printers() -> Result<Vec<PrinterInfo>, String> {
-    printer::list_printers()
+async fn cmd_list_printers() -> Result<Vec<PrinterInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || printer::list_printers())
+        .await
+        .map_err(|e| format!("Runtime error: {}", e))?
 }
 
 /// Compose and print a high-quality photo grid directly to a printer.
 /// Images are composited at full DPI resolution using the original pixel data,
 /// bypassing the browser's print pipeline entirely.
 #[tauri::command]
-fn print_direct(job: PrintJob, printer_name: Option<String>) -> Result<String, String> {
-    // 1. Send to printer via Win32 GDI natively
-    let printer = printer_name.unwrap_or_else(|| String::from(""));
-    printer::print_job(&job, &printer)?;
+async fn cmd_print_direct(
+    window: tauri::Window,
+    job: PrintJob,
+    printer_name: Option<String>,
+) -> Result<String, String> {
+    // Run the printing logic in a blocking thread to avoid freezing the main UI thread.
+    // Win32 GDI and Print Dialogs are blocking operations.
+    tauri::async_runtime::spawn_blocking(move || {
+        let printer = printer_name.unwrap_or_else(|| String::from(""));
+        
+        // Use the window handle for modal dialogs
+        #[cfg(target_os = "windows")]
+        let hwnd = window.hwnd().ok().map(|h| h.0 as usize);
+        #[cfg(not(target_os = "windows"))]
+        let hwnd = None;
 
-    Ok("Print job sent successfully".to_string())
+        printer::print_job(&job, &printer, hwnd)?;
+        Ok("Print job sent successfully".to_string())
+    })
+    .await
+    .map_err(|e| format!("Runtime error: {}", e))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![list_printers, print_direct])
+        .invoke_handler(tauri::generate_handler![cmd_list_printers, cmd_print_direct])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

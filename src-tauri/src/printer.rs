@@ -285,13 +285,14 @@ fn create_custom_page_devmode(grid: &GridConfig, printer_name: &str) -> Result<H
     }
 }
 
-fn show_print_dialog(grid: &GridConfig, printer_name: &str) -> Result<HDC, String> {
+fn show_print_dialog(grid: &GridConfig, printer_name: &str, hwnd: Option<usize>) -> Result<HDC, String> {
     unsafe {
         let resolved_printer = get_printer_name(printer_name)?;
         let hdevmode = create_custom_page_devmode(grid, &resolved_printer)?;
         let hdevnames = create_devnames(&resolved_printer)?;
         let mut dialog = PRINTDLGA {
             lStructSize: std::mem::size_of::<PRINTDLGA>() as u32,
+            hwndOwner: hwnd.map(|h| windows::Win32::Foundation::HWND(h as _)).unwrap_or_default(),
             hDevMode: hdevmode,
             hDevNames: hdevnames,
             Flags: PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS | PD_HIDEPRINTTOFILE,
@@ -335,12 +336,12 @@ fn show_print_dialog(grid: &GridConfig, printer_name: &str) -> Result<HDC, Strin
 }
 
 /// Send the print job directly to a printer via Win32 GDI.
-pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
+pub fn print_job(job: &PrintJob, printer_name: &str, hwnd: Option<usize>) -> Result<(), String> {
     let grid = &job.grid;
 
     unsafe {
         // --- 1. Get printer DC ---
-        let hdc = show_print_dialog(grid, printer_name)?;
+        let hdc = show_print_dialog(grid, printer_name, hwnd)?;
 
         if hdc.is_invalid() {
             return Err("Failed to create printer device context".to_string());
