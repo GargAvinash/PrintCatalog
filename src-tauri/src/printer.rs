@@ -389,7 +389,25 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
             grid.page_width, grid.page_height, log_pixels_x, log_pixels_y, scale_x, scale_y
         );
 
-        // --- 4. Draw each cell ---
+        // --- 4. Draw each cell, caching decoded images without changing draw order ---
+        struct CachedImage {
+            src_w: i32,
+            src_h: i32,
+            bgr: Vec<u8>,
+            bmi: BITMAPINFO,
+        }
+
+        // Pre-calculate how many times each unique image is used
+        let mut usage_counts: std::collections::HashMap<(&str, i32), usize> = std::collections::HashMap::new();
+        for cell in &job.cells {
+            if cell.row >= grid.rows || cell.col >= grid.cols {
+                continue;
+            }
+            *usage_counts.entry((cell.image_data.as_str(), cell.rotation)).or_insert(0) += 1;
+        }
+
+        let mut image_cache: std::collections::HashMap<(&str, i32), CachedImage> = std::collections::HashMap::new();
+
         for cell in &job.cells {
             if cell.row >= grid.rows || cell.col >= grid.cols {
                 println!(
@@ -399,28 +417,38 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
                 continue;
             }
 
-            let img = crate::print_engine::prepare_cell_image(cell)?;
-            let rgba = img.to_rgba8();
-            let src_w = rgba.width() as i32;
-            let src_h = rgba.height() as i32;
+            let cache_key = (cell.image_data.as_str(), cell.rotation);
 
-            let bgr = rgba_to_bgr(&rgba);
-            let bmi = BITMAPINFO {
-                bmiHeader: BITMAPINFOHEADER {
-                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                    biWidth: src_w,
-                    biHeight: src_h,
-                    biPlanes: 1,
-                    biBitCount: 24,
-                    biCompression: 0,
-                    biSizeImage: bgr.len() as u32,
-                    biXPelsPerMeter: 0,
-                    biYPelsPerMeter: 0,
-                    biClrUsed: 0,
-                    biClrImportant: 0,
-                },
-                bmiColors: [RGBQUAD::default()],
-            };
+            if !image_cache.contains_key(&cache_key) {
+                let img = crate::print_engine::prepare_cell_image(cell)?;
+                let rgba = img.to_rgba8();
+                let src_w = rgba.width() as i32;
+                let src_h = rgba.height() as i32;
+                let bgr = rgba_to_bgr(&rgba);
+
+                let bmi = BITMAPINFO {
+                    bmiHeader: BITMAPINFOHEADER {
+                        biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                        biWidth: src_w,
+                        biHeight: src_h,
+                        biPlanes: 1,
+                        biBitCount: 24,
+                        biCompression: 0,
+                        biSizeImage: bgr.len() as u32,
+                        biXPelsPerMeter: 0,
+                        biYPelsPerMeter: 0,
+                        biClrUsed: 0,
+                        biClrImportant: 0,
+                    },
+                    bmiColors: [RGBQUAD::default()],
+                };
+
+                image_cache.insert(cache_key, CachedImage { src_w, src_h, bgr, bmi });
+            }
+
+            let cached = image_cache
+                .get(&cache_key)
+                .ok_or_else(|| "Image cache lookup failed".to_string())?;
 
             // Destination rectangle in printer device units
             let cell_x_mm = grid.padding_left + cell.col as f64 * (grid.cell_width + grid.gap_x);
@@ -433,8 +461,8 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
             let (sx, sy, sw, sh, dx, dy, dw, dh) = compute_image_placement(
                 &cell.object_fit,
                 &cell.alignment,
-                src_w,
-                src_h,
+                cached.src_w,
+                cached.src_h,
                 dest_x,
                 dest_y,
                 dest_w,
@@ -445,7 +473,7 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
 
             println!(
                 "[Printer] Cell ({},{}) — {}x{}px → src({},{} {}x{}) → dest({},{} {}x{})",
-                cell.row, cell.col, src_w, src_h, sx, sy, sw, sh, dx, dy, dw, dh
+                cell.row, cell.col, cached.src_w, cached.src_h, sx, sy, sw, sh, dx, dy, dw, dh
             );
 
             let result = StretchDIBits(
@@ -458,8 +486,8 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
                 sy,
                 sw,
                 sh,
-                Some(bgr.as_ptr() as *const _),
-                &bmi,
+                Some(cached.bgr.as_ptr() as *const _),
+                &cached.bmi,
                 DIB_RGB_COLORS,
                 SRCCOPY,
             );
