@@ -86,21 +86,26 @@ pub fn list_printers() -> Result<Vec<PrinterInfo>, String> {
 
 /// Convert RGBA image to BGR bottom-up byte buffer for GDI
 fn rgba_to_bgr(img: &image::RgbaImage) -> Vec<u8> {
-    let w = img.width() as i32;
-    let h = img.height() as i32;
+    let w = img.width() as usize;
+    let h = img.height() as usize;
     let row_bytes = w * 3;
     let padding = (4 - (row_bytes % 4)) % 4;
+    let stride = row_bytes + padding;
 
-    let mut bgr = Vec::with_capacity(((row_bytes + padding) * h) as usize);
-    for y in (0..h).rev() {
+    let mut bgr = vec![0u8; stride * h];
+    let raw = img.as_raw();
+
+    for y in 0..h {
+        let src_y = h - 1 - y;
+        let dest_row_start = y * stride;
+        let src_row_start = src_y * w * 4;
+
         for x in 0..w {
-            let px = img.get_pixel(x as u32, y as u32);
-            bgr.push(px[2]);
-            bgr.push(px[1]);
-            bgr.push(px[0]);
-        }
-        for _ in 0..padding {
-            bgr.push(0);
+            let src_px = src_row_start + x * 4;
+            let dest_px = dest_row_start + x * 3;
+            bgr[dest_px] = raw[src_px + 2];     // B
+            bgr[dest_px + 1] = raw[src_px + 1]; // G
+            bgr[dest_px + 2] = raw[src_px];     // R
         }
     }
     bgr
@@ -397,16 +402,7 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
             bmi: BITMAPINFO,
         }
 
-        // Pre-calculate how many times each unique image is used
-        let mut usage_counts: std::collections::HashMap<(&str, i32), usize> = std::collections::HashMap::new();
-        for cell in &job.cells {
-            if cell.row >= grid.rows || cell.col >= grid.cols {
-                continue;
-            }
-            *usage_counts.entry((cell.image_data.as_str(), cell.rotation)).or_insert(0) += 1;
-        }
-
-        let mut image_cache: std::collections::HashMap<(&str, i32), CachedImage> = std::collections::HashMap::new();
+        let mut image_cache: std::collections::HashMap<(String, i32), CachedImage> = std::collections::HashMap::new();
 
         for cell in &job.cells {
             if cell.row >= grid.rows || cell.col >= grid.cols {
@@ -417,10 +413,14 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
                 continue;
             }
 
-            let cache_key = (cell.image_data.as_str(), cell.rotation);
+            let cache_key = (cell.image_id.clone(), cell.rotation);
 
             if !image_cache.contains_key(&cache_key) {
-                let img = crate::print_engine::prepare_cell_image(cell)?;
+                let image_data = job.images.get(&cell.image_id).ok_or_else(|| {
+                    format!("Image ID {} not found in job images", cell.image_id)
+                })?;
+
+                let img = crate::print_engine::prepare_cell_image(image_data, cell.rotation)?;
                 let rgba = img.to_rgba8();
                 let src_w = rgba.width() as i32;
                 let src_h = rgba.height() as i32;
@@ -443,7 +443,7 @@ pub fn print_job(job: &PrintJob, printer_name: &str) -> Result<(), String> {
                     bmiColors: [RGBQUAD::default()],
                 };
 
-                image_cache.insert(cache_key, CachedImage { src_w, src_h, bgr, bmi });
+                image_cache.insert(cache_key.clone(), CachedImage { src_w, src_h, bgr, bmi });
             }
 
             let cached = image_cache

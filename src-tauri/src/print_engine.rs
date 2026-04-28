@@ -1,12 +1,11 @@
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 /// Print Engine — Decode and rotate images, preserving original pixel data.
 ///
 /// This module decodes the original image data (base64 from the frontend)
 /// and applies only rotation. No resizing, cropping, or padding — the
 /// printer driver handles all scaling via StretchDIBits.
-
 use image::DynamicImage;
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64;
 
 /// Decode a base64 data URI (data:image/...;base64,...) into a DynamicImage
 pub fn decode_data_uri(data_uri: &str) -> Result<DynamicImage, String> {
@@ -20,21 +19,20 @@ pub fn decode_data_uri(data_uri: &str) -> Result<DynamicImage, String> {
         .decode(base64_data)
         .map_err(|e| format!("Base64 decode error: {}", e))?;
 
-    image::load_from_memory(&bytes)
-        .map_err(|e| format!("Image decode error: {}", e))
+    image::load_from_memory(&bytes).map_err(|e| format!("Image decode error: {}", e))
 }
 
 /// Decode and rotate an image. Returns the original pixels untouched
 /// (except for rotation). No resizing, no cropping, no padding.
-pub fn prepare_cell_image(cell: &crate::CellInfo) -> Result<DynamicImage, String> {
-    let img = decode_data_uri(&cell.image_data)?;
+pub fn prepare_cell_image(image_data: &str, rotation: i32) -> Result<DynamicImage, String> {
+    let img = decode_data_uri(image_data)?;
 
     // Apply rotation only
-    let rotated = match cell.rotation.rem_euclid(360) {
-        90  => img.rotate90(),
+    let rotated = match rotation.rem_euclid(360) {
+        90 => img.rotate90(),
         180 => img.rotate180(),
         270 => img.rotate270(),
-        _   => img,
+        _ => img,
     };
 
     Ok(rotated)

@@ -26,7 +26,7 @@ pub struct GridConfig {
 pub struct CellInfo {
     pub row: u32,
     pub col: u32,
-    pub image_data: String,    // base64 data URI
+    pub image_id: String,      // reference to image in PrintJob.images
     pub object_fit: String,    // "cover" or "contain"
     pub alignment: String,     // e.g. "center", "top-left"
     pub rotation: i32,         // 0, 90, 180, 270
@@ -38,6 +38,7 @@ pub struct CellInfo {
 #[serde(rename_all = "camelCase")]
 pub struct PrintJob {
     pub grid: GridConfig,
+    pub images: std::collections::HashMap<String, String>, // id -> base64 data URI
     pub cells: Vec<CellInfo>,
 }
 

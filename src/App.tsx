@@ -498,20 +498,26 @@ export default function App() {
   };
 
   const handlePrint = async () => {
-    // Build the print job: collect all occupied cells with their image data
-    const cells = Object.entries(state.cells).filter(([key]) => isCellInGrid(key, state.grid)).map(([key, cell]) => {
+    // Build the print job: collect unique images and map cells to them
+    const activeCells = Object.entries(state.cells).filter(([key]) => isCellInGrid(key, state.grid));
+    
+    const images: Record<string, string> = {};
+    const cells = activeCells.map(([key, cell]) => {
       const { row, col } = parseCellKey(key);
-      const image = state.images.find(img => img.id === cell.imageId);
+      const imageAsset = state.images.find(img => img.id === cell.imageId);
+      if (imageAsset && !images[imageAsset.id]) {
+        images[imageAsset.id] = imageAsset.url;
+      }
       return {
         row,
         col,
-        imageData: image?.url || '',
+        imageId: cell.imageId,
         objectFit: cell.objectFit || 'cover',
         alignment: cell.alignment || 'center',
         rotation: cell.rotation || 0,
         outline: cell.outline || false,
       };
-    }).filter(c => c.imageData);
+    }).filter(c => images[c.imageId]);
 
     if (cells.length === 0) {
       setPrintStatus({ type: 'error', message: 'No photos placed on the grid' });
@@ -538,6 +544,7 @@ export default function App() {
             pageHeight: state.grid.pageHeight || 297,
             dpi: state.grid.dpi || 600,
           },
+          images,
           cells,
         },
         printerName: selectedPrinter || null,
