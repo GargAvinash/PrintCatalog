@@ -245,9 +245,15 @@ fn create_custom_page_devmode(grid: &GridConfig, printer_name: &str) -> Result<H
             CString::new(printer_name).map_err(|e| format!("Invalid printer name: {}", e))?;
         let printer_pcstr = PCSTR(c_name.as_ptr() as *const u8);
 
+        let mut h_printer = PRINTER_HANDLE::default();
+        if OpenPrinterA(printer_pcstr, &mut h_printer, None).is_err() {
+            return Err("Unable to open printer for settings".to_string());
+        }
+
         let dm_size =
-            DocumentPropertiesA(None, PRINTER_HANDLE::default(), printer_pcstr, None, None, 0);
+            DocumentPropertiesA(None, h_printer, printer_pcstr, None, None, 0);
         if dm_size <= 0 {
+            let _ = ClosePrinter(h_printer);
             return Err("Unable to read default printer settings".to_string());
         }
 
@@ -256,43 +262,75 @@ fn create_custom_page_devmode(grid: &GridConfig, printer_name: &str) -> Result<H
         let devmode_ptr = GlobalLock(hdevmode) as *mut DEVMODEA;
         if devmode_ptr.is_null() {
             let _ = GlobalFree(Some(hdevmode));
+            let _ = ClosePrinter(h_printer);
             return Err("Unable to lock printer settings".to_string());
         }
 
         let got = DocumentPropertiesA(
             None,
-            PRINTER_HANDLE::default(),
+            h_printer,
             printer_pcstr,
             Some(devmode_ptr),
             None,
             2, // DM_OUT_BUFFER
         );
+        
+        let _ = ClosePrinter(h_printer);
+
         if got < 0 {
             let _ = GlobalUnlock(hdevmode);
             let _ = GlobalFree(Some(hdevmode));
             return Err("Unable to load default printer settings".to_string());
         }
 
-        (*devmode_ptr).dmFields |= DM_PAPERSIZE | DM_PAPERLENGTH | DM_PAPERWIDTH;
-        (*devmode_ptr).Anonymous1.Anonymous1.dmPaperSize = 0;
-        (*devmode_ptr).Anonymous1.Anonymous1.dmPaperWidth =
-            (grid.page_width * 10.0).round() as i16;
-        (*devmode_ptr).Anonymous1.Anonymous1.dmPaperLength =
-            (grid.page_height * 10.0).round() as i16;
+        (*devmode_ptr).dmFields |= DM_PAPERSIZE | DM_PAPERLENGTH | DM_PAPERWIDTH | DM_ORIENTATION;
+        
+        // Match standard paper sizes to help modern dialogs recognize them
+        let w_mm = grid.page_width.round() as i32;
+        let h_mm = grid.page_height.round() as i32;
+        
+        if (w_mm == 210 && h_mm == 297) || (w_mm == 297 && h_mm == 210) {
+            (*devmode_ptr).Anonymous1.Anonymous1.dmPaperSize = 9; // DMPAPER_A4
+        } else if (w_mm == 216 && h_mm == 279) || (w_mm == 279 && h_mm == 216) {
+            (*devmode_ptr).Anonymous1.Anonymous1.dmPaperSize = 1; // DMPAPER_LETTER
+        } else {
+            (*devmode_ptr).Anonymous1.Anonymous1.dmPaperSize = 0; // Custom
+        }
 
+        (*devmode_ptr).Anonymous1.Anonymous1.dmPaperWidth = (grid.page_width * 10.0).round() as i16;
+        (*devmode_ptr).Anonymous1.Anonymous1.dmPaperLength = (grid.page_height * 10.0).round() as i16;
+        // Set orientation based on dimensions
+        if grid.page_width > grid.page_height {
+            (*devmode_ptr).Anonymous1.Anonymous1.dmOrientation = 2; // DMORIENT_LANDSCAPE
+        } else {
+            (*devmode_ptr).Anonymous1.Anonymous1.dmOrientation = 1; // DMORIENT_PORTRAIT
+        }
+
+        // --- CRITICAL: Let the driver validate and merge the changes ---
+        // This ensures the driver recognizes the custom paper size/orientation
+        // and updates internal private fields if necessary.
+        let _ = DocumentPropertiesA(
+            None,
+            h_printer,
+            printer_pcstr,
+            Some(devmode_ptr),
+            Some(devmode_ptr),
+            (DM_IN_BUFFER.0 | DM_OUT_BUFFER.0) as u32,
+        );
+
+        let _ = ClosePrinter(h_printer);
         let _ = GlobalUnlock(hdevmode);
         Ok(hdevmode)
     }
 }
-
-fn show_print_dialog(grid: &GridConfig, printer_name: &str, hwnd: Option<usize>) -> Result<HDC, String> {
+fn show_print_dialog(grid: &GridConfig, printer_name: &str, _hwnd: Option<usize>) -> Result<HDC, String> {
     unsafe {
         let resolved_printer = get_printer_name(printer_name)?;
         let hdevmode = create_custom_page_devmode(grid, &resolved_printer)?;
         let hdevnames = create_devnames(&resolved_printer)?;
         let mut dialog = PRINTDLGA {
             lStructSize: std::mem::size_of::<PRINTDLGA>() as u32,
-            hwndOwner: hwnd.map(|h| windows::Win32::Foundation::HWND(h as _)).unwrap_or_default(),
+            hwndOwner: windows::Win32::Foundation::HWND::default(), // Setting to NULL forces legacy dialog on Win11
             hDevMode: hdevmode,
             hDevNames: hdevnames,
             Flags: PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS | PD_HIDEPRINTTOFILE,
