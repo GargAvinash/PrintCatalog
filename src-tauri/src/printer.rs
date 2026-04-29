@@ -5,14 +5,14 @@
 /// Uses source-crop StretchDIBits for cover/contain and GDI vector outlines.
 use crate::{GridConfig, PrintJob, PrinterInfo};
 use std::ffi::CString;
-use windows::Win32::Foundation::{GlobalFree, COLORREF, HGLOBAL};
+use windows::Win32::Foundation::{COLORREF, GlobalFree, HGLOBAL};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::Graphics::Printing::*;
-use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::Storage::Xps::{DOCINFOA, EndDoc, EndPage, StartDocA, StartPage};
+use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
 use windows::Win32::UI::Controls::Dialogs::{
-    CommDlgExtendedError, PrintDlgA, DEVNAMES, PD_HIDEPRINTTOFILE, PD_NOPAGENUMS, PD_NOSELECTION,
-    PD_RETURNDC, PRINTDLGA,
+    CommDlgExtendedError, DEVNAMES, PD_HIDEPRINTTOFILE, PD_NOPAGENUMS, PD_NOSELECTION, PD_RETURNDC,
+    PRINTDLGA, PrintDlgA,
 };
 use windows::core::{PCSTR, PSTR};
 
@@ -102,9 +102,9 @@ fn rgba_to_bgr(img: &image::RgbaImage) -> Vec<u8> {
         for x in 0..w {
             let src_px = src_row_start + x * 4;
             let dest_px = dest_row_start + x * 3;
-            bgr[dest_px] = raw[src_px + 2];     // B
+            bgr[dest_px] = raw[src_px + 2]; // B
             bgr[dest_px + 1] = raw[src_px + 1]; // G
-            bgr[dest_px + 2] = raw[src_px];     // R
+            bgr[dest_px + 2] = raw[src_px]; // R
         }
     }
     bgr
@@ -187,8 +187,7 @@ fn get_printer_name(printer_name: &str) -> Result<String, String> {
 
         let mut default_name_buf = vec![0u8; 512];
         let mut default_size = default_name_buf.len() as u32;
-        if GetDefaultPrinterA(Some(PSTR(default_name_buf.as_mut_ptr())), &mut default_size).0 == 0
-        {
+        if GetDefaultPrinterA(Some(PSTR(default_name_buf.as_mut_ptr())), &mut default_size).0 == 0 {
             return Err("No default printer found".to_string());
         }
 
@@ -221,7 +220,11 @@ fn create_devnames(printer_name: &str) -> Result<HGLOBAL, String> {
         (*header).wOutputOffset = (header_size + driver_name.len() + device_name.len()) as u16;
         (*header).wDefault = 0;
 
-        std::ptr::copy_nonoverlapping(driver_name.as_ptr(), ptr.add(header_size), driver_name.len());
+        std::ptr::copy_nonoverlapping(
+            driver_name.as_ptr(),
+            ptr.add(header_size),
+            driver_name.len(),
+        );
         std::ptr::copy_nonoverlapping(
             device_name.as_ptr(),
             ptr.add(header_size + driver_name.len()),
@@ -249,8 +252,7 @@ fn create_custom_page_devmode(grid: &GridConfig, printer_name: &str) -> Result<H
             return Err("Unable to open printer for settings".to_string());
         }
 
-        let dm_size =
-            DocumentPropertiesA(None, h_printer, printer_pcstr, None, None, 0);
+        let dm_size = DocumentPropertiesA(None, h_printer, printer_pcstr, None, None, 0);
         if dm_size <= 0 {
             let _ = ClosePrinter(h_printer);
             return Err("Unable to read default printer settings".to_string());
@@ -273,21 +275,30 @@ fn create_custom_page_devmode(grid: &GridConfig, printer_name: &str) -> Result<H
             None,
             2, // DM_OUT_BUFFER
         );
-        
-        let _ = ClosePrinter(h_printer);
 
         if got < 0 {
             let _ = GlobalUnlock(hdevmode);
             let _ = GlobalFree(Some(hdevmode));
+            let _ = ClosePrinter(h_printer);
             return Err("Unable to load default printer settings".to_string());
         }
 
-        (*devmode_ptr).dmFields |= DM_PAPERSIZE | DM_PAPERLENGTH | DM_PAPERWIDTH | DM_ORIENTATION;
-        
+        let original_icm_method = (*devmode_ptr).dmICMMethod;
+        let original_icm_intent = (*devmode_ptr).dmICMIntent;
+
+        (*devmode_ptr).dmFields |= DM_PAPERSIZE
+            | DM_PAPERLENGTH
+            | DM_PAPERWIDTH
+            | DM_ORIENTATION
+            | DM_SCALE
+            | DM_COLOR
+            | DM_ICMMETHOD
+            | DM_ICMINTENT;
+
         // Match standard paper sizes to help modern dialogs recognize them
         let w_mm = grid.page_width.round() as i32;
         let h_mm = grid.page_height.round() as i32;
-        
+
         if (w_mm == 210 && h_mm == 297) || (w_mm == 297 && h_mm == 210) {
             (*devmode_ptr).Anonymous1.Anonymous1.dmPaperSize = 9; // DMPAPER_A4
         } else if (w_mm == 216 && h_mm == 279) || (w_mm == 279 && h_mm == 216) {
@@ -297,18 +308,26 @@ fn create_custom_page_devmode(grid: &GridConfig, printer_name: &str) -> Result<H
         }
 
         (*devmode_ptr).Anonymous1.Anonymous1.dmPaperWidth = (grid.page_width * 10.0).round() as i16;
-        (*devmode_ptr).Anonymous1.Anonymous1.dmPaperLength = (grid.page_height * 10.0).round() as i16;
+        (*devmode_ptr).Anonymous1.Anonymous1.dmPaperLength =
+            (grid.page_height * 10.0).round() as i16;
         // Set orientation based on dimensions
         if grid.page_width > grid.page_height {
             (*devmode_ptr).Anonymous1.Anonymous1.dmOrientation = 2; // DMORIENT_LANDSCAPE
         } else {
             (*devmode_ptr).Anonymous1.Anonymous1.dmOrientation = 1; // DMORIENT_PORTRAIT
         }
+        (*devmode_ptr).Anonymous1.Anonymous1.dmScale = 100;
+
+        // Match old photo apps more closely: do not do app-side color correction,
+        // but ask the printer driver to own photographic color handling.
+        (*devmode_ptr).dmColor = DMCOLOR_COLOR;
+        (*devmode_ptr).dmICMMethod = DMICMMETHOD_DRIVER;
+        (*devmode_ptr).dmICMIntent = DMICM_CONTRAST;
 
         // --- CRITICAL: Let the driver validate and merge the changes ---
         // This ensures the driver recognizes the custom paper size/orientation
         // and updates internal private fields if necessary.
-        let _ = DocumentPropertiesA(
+        let mut validated = DocumentPropertiesA(
             None,
             h_printer,
             printer_pcstr,
@@ -317,12 +336,48 @@ fn create_custom_page_devmode(grid: &GridConfig, printer_name: &str) -> Result<H
             (DM_IN_BUFFER.0 | DM_OUT_BUFFER.0) as u32,
         );
 
+        if validated < 0 {
+            (*devmode_ptr).dmICMMethod = DMICMMETHOD_NONE;
+            validated = DocumentPropertiesA(
+                None,
+                h_printer,
+                printer_pcstr,
+                Some(devmode_ptr),
+                Some(devmode_ptr),
+                (DM_IN_BUFFER.0 | DM_OUT_BUFFER.0) as u32,
+            );
+        }
+
+        if validated < 0 {
+            (*devmode_ptr).dmFields &= !(DM_ICMMETHOD | DM_ICMINTENT);
+            (*devmode_ptr).dmICMMethod = original_icm_method;
+            (*devmode_ptr).dmICMIntent = original_icm_intent;
+            validated = DocumentPropertiesA(
+                None,
+                h_printer,
+                printer_pcstr,
+                Some(devmode_ptr),
+                Some(devmode_ptr),
+                (DM_IN_BUFFER.0 | DM_OUT_BUFFER.0) as u32,
+            );
+        }
+
         let _ = ClosePrinter(h_printer);
+        if validated < 0 {
+            let _ = GlobalUnlock(hdevmode);
+            let _ = GlobalFree(Some(hdevmode));
+            return Err("Unable to validate printer settings".to_string());
+        }
+
         let _ = GlobalUnlock(hdevmode);
         Ok(hdevmode)
     }
 }
-fn show_print_dialog(grid: &GridConfig, printer_name: &str, _hwnd: Option<usize>) -> Result<HDC, String> {
+fn show_print_dialog(
+    grid: &GridConfig,
+    printer_name: &str,
+    _hwnd: Option<usize>,
+) -> Result<HDC, String> {
     unsafe {
         let resolved_printer = get_printer_name(printer_name)?;
         let hdevmode = create_custom_page_devmode(grid, &resolved_printer)?;
@@ -428,7 +483,8 @@ pub fn print_job(job: &PrintJob, printer_name: &str, hwnd: Option<usize>) -> Res
             bmi: BITMAPINFO,
         }
 
-        let mut image_cache: std::collections::HashMap<(String, i32), CachedImage> = std::collections::HashMap::new();
+        let mut image_cache: std::collections::HashMap<(String, i32), CachedImage> =
+            std::collections::HashMap::new();
 
         for cell in &job.cells {
             if cell.row >= grid.rows || cell.col >= grid.cols {
@@ -442,9 +498,10 @@ pub fn print_job(job: &PrintJob, printer_name: &str, hwnd: Option<usize>) -> Res
             let cache_key = (cell.image_id.clone(), cell.rotation);
 
             if !image_cache.contains_key(&cache_key) {
-                let image_data = job.images.get(&cell.image_id).ok_or_else(|| {
-                    format!("Image ID {} not found in job images", cell.image_id)
-                })?;
+                let image_data = job
+                    .images
+                    .get(&cell.image_id)
+                    .ok_or_else(|| format!("Image ID {} not found in job images", cell.image_id))?;
 
                 let img = crate::print_engine::prepare_cell_image(image_data, cell.rotation)?;
                 let rgba = img.to_rgba8();
@@ -469,7 +526,15 @@ pub fn print_job(job: &PrintJob, printer_name: &str, hwnd: Option<usize>) -> Res
                     bmiColors: [RGBQUAD::default()],
                 };
 
-                image_cache.insert(cache_key.clone(), CachedImage { src_w, src_h, bgr, bmi });
+                image_cache.insert(
+                    cache_key.clone(),
+                    CachedImage {
+                        src_w,
+                        src_h,
+                        bgr,
+                        bmi,
+                    },
+                );
             }
 
             let cached = image_cache
