@@ -8,3 +8,6 @@ src-tauri/target
 
 # Test PDFs
 *.pdf
+
+*.png
+*.jpg

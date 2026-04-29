@@ -29,6 +29,7 @@ This project, **PrintCatalog**, is a professional-grade desktop application desi
 ## Development Conventions
 
 -   **System Print Dialog Requirement:** ALWAYS show the system print dialog (`PrintDlgA`) instead of printing silently. This is a critical requirement as users need to access "Printer Properties" to configure advanced driver-specific features like high-DPI modes, color management, and specialized media settings.
+-   **Source Control (Releases):** When preparing a release (e.g., version bumps), ALWAYS commit the changes with a descriptive message. NEVER perform `git tag` or manage releases locally; tagging and release creation are handled exclusively through the GitHub interface.
 -   **Testing & Committing Mandate:** NEVER perform a `git commit` or finalize a task without first asking the user to manually test the application by running `npm run tauri dev`. You are encouraged to run `cargo check`, `cargo test`, or frontend linting/type-checks to verify compilation and basic logic before asking for manual validation.
 -   **High-Quality Printing Mandate:** Raw pixel data must be passed to the printer via Win32 GDI (`StretchDIBits` with `HALFTONE`) without applying intermediate color profiles or compression. The printer driver must receive the data as "raw" as possible.
 -   **Performance Goal:** The application must aim for the speed and accuracy of **Presto! Mr. Photo**, handling high-resolution assets instantly.
