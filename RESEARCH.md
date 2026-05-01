@@ -1,40 +1,5 @@
 # Research and Development Notes
 
-## Codex Suggestion Analysis
-*This section analyzes the evolution of color management and GDI intervention.*
-
-Checked commit `5c2745649845e4128db7244cf16be16681d54fb5` against `HEAD` and current working tree.
-
-**Result**
-The changes from `5c27456` are still present. They were not removed in later commits.
-
-Still present in `src-tauri/src/printer.rs`:
-- `SetStretchBltMode(hdc, HALFTONE)`
-- `SetBrushOrgEx(hdc, 0, 0, None)`
-- `SetICMMode(...)`
-- `COLORADJUSTMENT::default()`
-- `GetColorAdjustment(...)`
-- manual gamma/brightness/contrast/reference black/white neutralization
-- `SetColorAdjustment(...)`
-- `LOGPIXELSX` / `LOGPIXELSY` DPI scaling
-
-**What Changed After That Commit**
-From `5c27456` to current `HEAD`, later commits mainly changed:
-- image payload structure: `image_data` per cell became `image_id` plus shared `job.images`
-- backend image caching
-- faster RGBA-to-BGR conversion
-- version bump to `1.1.2`
-
-They did not remove the color-management block.
-
-**Correction To My Earlier Suggestion**
-My earlier suggestion was not the same as commit `5c27456`.
-Commit `5c27456` enabled ICM via `SetICMMode`, kept `HALFTONE`, and tried to neutralize GDI color adjustment values.
-My suggestion was more aggressive: remove app-side color intervention entirely and let the driver handle color without `SetICMMode` / `SetColorAdjustment`.
-Since `PrintCatalog_high.pdf` was still farther from the source than `mr_photo_high.pdf`, the next investigation should be whether `SetICMMode` or `SetColorAdjustment` itself is causing the remaining difference, despite the neutral values.
-
----
-
 ## Windows Print Dialog Research: Legacy vs. Modern (Windows 11)
 *Investigation into paper size overrides and dialog behavior.*
 
