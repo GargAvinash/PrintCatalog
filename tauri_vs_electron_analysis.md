@@ -39,7 +39,7 @@ dpi?: number; // 300, 600, 1200
 ```
 
 > [!CAUTION]
-> **The browser is the bottleneck.** Even though your original photo has more than enough pixels, the browser's print renderer resamples it using its own internal algorithm. You can't control the interpolation method, and the browser doesn't send your original pixels to the printer.
+> **Standard document rendering is the bottleneck.** Even though your original photo has more than enough pixels, typical high-level print renderers often resample images using fixed internal algorithms. You can't control the interpolation method, and they don't send your original pixels to the printer.
 
 ### What the printer can actually handle
 
@@ -115,7 +115,7 @@ If you could send the original 3000×4000 pixel image and tell the printer "plac
 ### For YOUR Use Case (High-Quality Photo Printing)
 
 > [!IMPORTANT]
-> **Print quality is identical between Electron and Tauri.** Both bypass the browser's print pipeline entirely. The quality difference is in HOW you compose and send the image to the printer — and both can do it the same way.
+> **Print quality is identical between Electron and Tauri.** Both use a native print pipeline. The quality difference is in HOW you compose and send the image to the printer — and both can do it the same way.
 
 The high-quality print pipeline (same in both):
 
@@ -280,7 +280,7 @@ All three: IDENTICAL quality.
 ```
 
 > [!IMPORTANT]
-> **There is ZERO print quality difference between a native app and Electron/Tauri** when you bypass the browser's rendering for the print path. The print pipeline is the same: read original image → compose at full resolution → send to printer via OS API. The UI framework doesn't touch the print data.
+> **There is ZERO print quality difference between a native app and Electron/Tauri** when using a native rendering path for printing. The print pipeline is the same: read original image → compose at full resolution → send to printer via OS API. The UI framework doesn't touch the print data.
 
 The only theoretical advantage of native is slightly lower overhead in the GDI call chain, but this is measured in microseconds — completely irrelevant for print quality.
 
@@ -307,7 +307,7 @@ The only theoretical advantage of native is slightly lower overhead in the GDI c
 | Performance | Good | Excellent | Excellent |
 
 **Tauri wins** because:
-1. **Same print quality as everything else** — the print pipeline bypasses the browser regardless
+1. **Same print quality as everything else** — the print pipeline uses native OS APIs regardless
 2. **95% of your React code is reused** — only the print handler changes
 3. **~550 lines of new code** vs rebuilding everything from scratch for native
 4. **5-10MB install** vs Electron's 250MB bloat

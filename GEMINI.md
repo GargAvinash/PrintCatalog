@@ -1,6 +1,6 @@
 # GEMINI.md
 
-This project, **PrintCatalog**, is a professional-grade desktop application designed for arranging photos in precise grid layouts (e.g., passport photos, ID cards) and printing them at full resolution by bypassing the browser's print pipeline and using a native Win32 GDI printing engine.
+This project, **PrintCatalog**, is a professional-grade desktop application designed for arranging photos in precise grid layouts (e.g., passport photos, ID cards) and printing them at full resolution using a native Win32 GDI printing engine.
 
 ## Project Overview
 

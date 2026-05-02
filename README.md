@@ -1,8 +1,8 @@
 # PrintCatalog
 
-High-fidelity photo grid printing — directly to your printer, bypassing the browser.
+High-fidelity photo grid printing — directly to your printer via native Win32 GDI.
 
-PrintCatalog is a professional-grade desktop application for arranging photos in precise grid layouts (passport photos, ID cards, contact sheets) and printing them at full resolution. By using a native Win32 GDI printing pipeline, it eliminates the quality loss and layout unpredictability common with browser-based printing.
+PrintCatalog is a professional-grade desktop application for arranging photos in precise grid layouts (passport photos, ID cards, contact sheets) and printing them at full resolution. By using a native Win32 GDI printing pipeline, it ensures maximum quality and sub-millimeter layout accuracy.
 
 ## ✨ Key Features
 
@@ -18,7 +18,6 @@ PrintCatalog is a professional-grade desktop application for arranging photos in
   - **Rotation**: 90° increment rotations.
   - **Outlines**: Toggleable inward-stroke outlines (perfect for cutting guides).
 - **🖨️ Native Print Engine**:
-  - **Bypasses Browser**: Eliminates the restrictive and low-res browser print interface.
   - **Win32 GDI Integration**: Uses `StretchDIBits` with `HALFTONE` interpolation for superior scaling.
   - **High-DPI Support**: Optimized for 600+ DPI output with direct Device Context (DC) manipulation.
   - **Custom Paper Support**: Automatically communicates custom dimensions to the printer via `DEVMODE` (A4, 4x6", Letter, etc.).

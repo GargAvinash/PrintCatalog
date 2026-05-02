@@ -58,8 +58,8 @@ async fn cmd_list_printers() -> Result<Vec<PrinterInfo>, String> {
 }
 
 /// Compose and print a high-quality photo grid directly to a printer.
-/// Images are composited at full DPI resolution using the original pixel data,
-/// bypassing the browser's print pipeline entirely.
+/// Images are composited at full DPI resolution using the original pixel data
+/// via the native Win32 GDI printing engine.
 #[tauri::command]
 async fn cmd_print_direct(
     window: tauri::Window,
