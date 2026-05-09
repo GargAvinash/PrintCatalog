@@ -670,6 +670,26 @@ mod tests {
     }
 
     #[test]
+    fn cover_alignment_crops_tall_rotated_source_from_center() {
+        // Original image was landscape 400x200, rotated 90 deg to 200x400
+        let centered = compute_image_placement(
+            "cover",
+            "center",
+            200,
+            400,
+            10,
+            20,
+            100,
+            100,
+            50.0,
+            50.0,
+        );
+
+        // Should crop from y=100 to y=300 (height 200) to match square aspect
+        assert_eq!(centered, (0, 100, 200, 200, 10, 20, 100, 100));
+    }
+
+    #[test]
     fn unknown_alignment_defaults_to_center() {
         let centered = compute_image_placement(
             "contain",

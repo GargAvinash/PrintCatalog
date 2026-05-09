@@ -844,15 +844,17 @@ export default function App() {
                   const key = `${r}-${c}`;
                   const cell = state.cells[key];
                   const image = cell ? state.images.find(img => img.id === cell.imageId) : null;
+                  const rotation = cell?.rotation || 0;
+                  const isRotated = rotation % 180 !== 0;
 
                   return (
-                    <div 
+                    <div
                       key={key}
                       onClick={() => stampCell(key)}
                       className={`
                         relative overflow-hidden cursor-pointer border
                         ${gridAction === 'clear' && image ? 'border-slate-400 hover:border-red-500 hover:ring-2 hover:ring-red-200 print:border-transparent' :
-                          (!image ? 'border-slate-400 border-dashed hover:bg-blue-50/50 print:border-transparent' : 
+                          (!image ? 'border-slate-400 border-dashed hover:bg-blue-50/50 print:border-transparent' :
                             (cell?.outline ? 'border-black' : 'border-slate-400 hover:border-blue-500 print:border-transparent'))}
                       `}
                       style={{
@@ -862,22 +864,23 @@ export default function App() {
                     >
                       {image && (
                         <div className="w-full h-full relative bg-white" style={{ overflow: 'hidden' }}>
-                          <img 
-                            src={image.url} 
+                          <img
+                            src={image.url}
                             className="absolute pointer-events-none"
                             style={{
+                              top: '50%',
+                              left: '50%',
                               width: '100%',
                               height: '100%',
                               objectFit: cell.objectFit || 'cover',
                               objectPosition: ALIGNMENT_MAP[cell.alignment || 'center'],
-                              transform: `rotate(${cell.rotation || 0}deg)`,
+                              transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${isRotated ? Math.max(state.grid.cellWidth / state.grid.cellHeight, state.grid.cellHeight / state.grid.cellWidth) : 1})`,
                             }}
                           />
                         </div>
                       )}
                     </div>
-                  );
-                })}
+                  );                })}
               </div>
             </div>
           </div>
@@ -1204,14 +1207,20 @@ export default function App() {
                    {(() => {
                      const imgAsset = state.images.find(img => img.id === editingPhotoId);
                      const config = state.imageConfigs[editingPhotoId] || { objectFit: 'cover', alignment: 'center', rotation: 0, outline: false };
+                     const rotation = config.rotation || 0;
+                     const isRotated = rotation % 180 !== 0;
                      return imgAsset ? (
                        <img 
                           src={imgAsset.url} 
-                          className="w-full h-full"
+                          className="absolute pointer-events-none"
                           style={{
-                            objectFit: config.objectFit,
+                            top: '50%',
+                            left: '50%',
+                            width: '100%',
+                            height: '100%',
+                            objectFit: config.objectFit || 'cover',
                             objectPosition: ALIGNMENT_MAP[config.alignment || 'center'],
-                            transform: `rotate(${config.rotation || 0}deg)`,
+                            transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${isRotated ? Math.max(state.grid.cellWidth / state.grid.cellHeight, state.grid.cellHeight / state.grid.cellWidth) : 1})`,
                           }}
                        />
                      ) : null;
