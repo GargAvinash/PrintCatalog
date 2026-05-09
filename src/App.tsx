@@ -807,7 +807,7 @@ export default function App() {
               }}
             >
           <div 
-            className="preview-page bg-white shadow-xl relative transition-all duration-300 print:m-0 print:shadow-none mx-auto border border-slate-200 rounded-sm"
+            className="preview-page bg-white shadow-xl relative transition-all duration-300 print:m-0 print:shadow-none mx-auto border border-slate-200 rounded-sm overflow-hidden"
             style={{ 
               width: `${pageWidthMm}mm`, 
               height: `${pageHeightMm}mm`,
@@ -832,6 +832,15 @@ export default function App() {
                 {Array.from({ length: state.grid.rows * state.grid.cols }).map((_, i) => {
                   const r = Math.floor(i / state.grid.cols);
                   const c = i % state.grid.cols;
+                  
+                  // Calculate if cell is within page boundaries
+                  const cellX = state.grid.paddingLeft + c * (state.grid.cellWidth + state.grid.gapX);
+                  const cellY = state.grid.paddingTop + r * (state.grid.cellHeight + state.grid.gapY);
+                  const isCellInBounds = (cellX + state.grid.cellWidth <= pageWidthMm + 0.1) && 
+                                       (cellY + state.grid.cellHeight <= pageHeightMm + 0.1);
+
+                  if (!isCellInBounds) return <div key={`${r}-${c}`} className="invisible" />;
+
                   const key = `${r}-${c}`;
                   const cell = state.cells[key];
                   const image = cell ? state.images.find(img => img.id === cell.imageId) : null;
@@ -902,69 +911,62 @@ export default function App() {
       {/* --- Modals --- */}
       
       {/* 1. Paper Style Modal */}
-      {isPaperStyleOpen && draftGrid && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden max-h-[95vh] overflow-y-auto"
-          >
-            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 sticky top-0 z-10">
-               <h2 className="font-semibold text-lg text-slate-800">Paper Style Configuration</h2>
-               <button onClick={() => {
-                 setPendingTemplateGrid(null);
-                 setTemplateNameDraft('');
-                 setTemplateNameError('');
-                 setIsPaperStyleOpen(false);
-               }} className="text-slate-400 hover:text-slate-600 transition"><X className="w-5 h-5" /></button>
-            </div>
-            
-            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
-               {/* Preview Side */}
-               <div className={`col-span-1 p-6 md:p-8 flex flex-col items-center justify-center rounded-xl transition-colors ${
-                 (() => {
-                   const contentW = draftGrid.paddingLeft + (draftGrid.cols * draftGrid.cellWidth) + (Math.max(0, draftGrid.cols - 1) * draftGrid.gapX);
-                   const contentH = draftGrid.paddingTop + (draftGrid.rows * draftGrid.cellHeight) + (Math.max(0, draftGrid.rows - 1) * draftGrid.gapY);
-                   return contentW > (draftGrid.pageWidth || 210) || contentH > (draftGrid.pageHeight || 297);
-                 })() ? 'bg-red-50' : 'bg-emerald-50'
-               }`}>
-                  <div 
-                    className={`bg-white shadow-sm border transition-colors flex relative ${
-                      (() => {
-                        const contentW = draftGrid.paddingLeft + (draftGrid.cols * draftGrid.cellWidth) + (Math.max(0, draftGrid.cols - 1) * draftGrid.gapX);
-                        const contentH = draftGrid.paddingTop + (draftGrid.rows * draftGrid.cellHeight) + (Math.max(0, draftGrid.rows - 1) * draftGrid.gapY);
-                        return contentW > (draftGrid.pageWidth || 210) || contentH > (draftGrid.pageHeight || 297);
-                      })() ? 'border-red-400' : 'border-emerald-400'
-                    }`}
-                    style={{
-                      width: '100%',
-                      aspectRatio: `${draftGrid.pageWidth || 210} / ${draftGrid.pageHeight || 297}`,
-                      containerType: 'size', // Key for accurate internal %
-                      overflow: 'hidden'
-                    }}
-                  >
-                     <div 
-                        style={{
-                           position: 'absolute',
-                           top: `${(draftGrid.paddingTop / (draftGrid.pageHeight || 297)) * 100}cqh`,
-                           left: `${(draftGrid.paddingLeft / (draftGrid.pageWidth || 210)) * 100}cqw`,
-                           display: 'grid',
-                           gridTemplateRows: `repeat(${draftGrid.rows}, ${(draftGrid.cellHeight / (draftGrid.pageHeight || 297)) * 100}cqh)`,
-                           gridTemplateColumns: `repeat(${draftGrid.cols}, ${(draftGrid.cellWidth / (draftGrid.pageWidth || 210)) * 100}cqw)`,
-                           rowGap: `${(draftGrid.gapY / (draftGrid.pageHeight || 297)) * 100}cqh`,
-                           columnGap: `${(draftGrid.gapX / (draftGrid.pageWidth || 210)) * 100}cqw`,
-                        }}
-                     >
-                        {Array.from({ length: draftGrid.rows * draftGrid.cols }).map((_, i) => (
-                          <div key={i} className="bg-slate-200 border border-slate-300"></div>
-                        ))}
-                     </div>
-                  </div>
-                  {(() => {
-                     const contentW = draftGrid.paddingLeft + (draftGrid.cols * draftGrid.cellWidth) + (Math.max(0, draftGrid.cols - 1) * draftGrid.gapX);
-                     const contentH = draftGrid.paddingTop + (draftGrid.rows * draftGrid.cellHeight) + (Math.max(0, draftGrid.rows - 1) * draftGrid.gapY);
-                     const isOverflowing = contentW > (draftGrid.pageWidth || 210) || contentH > (draftGrid.pageHeight || 297);
-                     return isOverflowing ? (
+      {isPaperStyleOpen && draftGrid && (() => {
+        const contentW = draftGrid.paddingLeft + (draftGrid.cols * draftGrid.cellWidth) + (Math.max(0, draftGrid.cols - 1) * draftGrid.gapX);
+        const contentH = draftGrid.paddingTop + (draftGrid.rows * draftGrid.cellHeight) + (Math.max(0, draftGrid.rows - 1) * draftGrid.gapY);
+        const isOverflowing = contentW > (draftGrid.pageWidth || 210) || contentH > (draftGrid.pageHeight || 297);
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden max-h-[95vh] overflow-y-auto"
+            >
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 sticky top-0 z-10">
+                 <h2 className="font-semibold text-lg text-slate-800">Paper Style Configuration</h2>
+                 <button onClick={() => {
+                   setPendingTemplateGrid(null);
+                   setTemplateNameDraft('');
+                   setTemplateNameError('');
+                   setIsPaperStyleOpen(false);
+                 }} className="text-slate-400 hover:text-slate-600 transition"><X className="w-5 h-5" /></button>
+              </div>
+              
+              <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
+                 {/* Preview Side */}
+                 <div className={`col-span-1 p-6 md:p-8 flex flex-col items-center justify-center rounded-xl transition-colors ${
+                   isOverflowing ? 'bg-red-50' : 'bg-emerald-50'
+                 }`}>
+                    <div 
+                      className={`bg-white shadow-sm border transition-colors flex relative ${
+                        isOverflowing ? 'border-red-400' : 'border-emerald-400'
+                      }`}
+                      style={{
+                        width: '100%',
+                        aspectRatio: `${draftGrid.pageWidth || 210} / ${draftGrid.pageHeight || 297}`,
+                        containerType: 'size', // Key for accurate internal %
+                        overflow: 'hidden'
+                      }}
+                    >
+                       <div 
+                          style={{
+                             position: 'absolute',
+                             top: `${(draftGrid.paddingTop / (draftGrid.pageHeight || 297)) * 100}cqh`,
+                             left: `${(draftGrid.paddingLeft / (draftGrid.pageWidth || 210)) * 100}cqw`,
+                             display: 'grid',
+                             gridTemplateRows: `repeat(${draftGrid.rows}, ${(draftGrid.cellHeight / (draftGrid.pageHeight || 297)) * 100}cqh)`,
+                             gridTemplateColumns: `repeat(${draftGrid.cols}, ${(draftGrid.cellWidth / (draftGrid.pageWidth || 210)) * 100}cqw)`,
+                             rowGap: `${(draftGrid.gapY / (draftGrid.pageHeight || 297)) * 100}cqh`,
+                             columnGap: `${(draftGrid.gapX / (draftGrid.pageWidth || 210)) * 100}cqw`,
+                          }}
+                       >
+                          {Array.from({ length: draftGrid.rows * draftGrid.cols }).map((_, i) => (
+                            <div key={i} className="bg-slate-200 border border-slate-300"></div>
+                          ))}
+                       </div>
+                    </div>
+                    {isOverflowing ? (
                       <div className="mt-4 flex items-center gap-1.5 text-red-600 font-medium text-xs">
                          <AlertCircle className="w-4 h-4" /> Layout exceeds bounds
                       </div>
@@ -972,128 +974,133 @@ export default function App() {
                       <div className="mt-4 flex items-center gap-1.5 text-emerald-600 font-medium text-xs">
                          <Check className="w-4 h-4" /> Layout fits cleanly
                       </div>
-                    );
-                  })()}
-               </div>
-               
-               {/* Controls Side */}
-               <div className="col-span-2 space-y-6">
-                  
-                  <div className="mb-6">
-                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Style Template</label>
-                    <select 
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
-                      value={(BUILT_IN_TEMPLATES.some(t => t.id === draftGrid.id) && !state.savedTemplates.some(template => gridsMatch(template, draftGrid))) ? 'custom' : draftGrid.id}
-                      onChange={e => {
-                        const selectedTemplate = state.savedTemplates.find(template => template.id === e.target.value);
-                        if (selectedTemplate) setDraftGrid({ ...selectedTemplate });
-                      }}
-                    >
-                       {(BUILT_IN_TEMPLATES.some(t => t.id === draftGrid.id) && !state.savedTemplates.some(template => gridsMatch(template, draftGrid))) && (
-                         <option value="custom">Unsaved changes</option>
-                       )}
-                       {state.savedTemplates.map(template => (
-                         <option key={template.id} value={template.id}>
-                           {template.name} ({template.pageWidth || 210} x {template.pageHeight || 297} mm)
-                         </option>
-                       ))}
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-6">
-                    {/* Paper Group */}
-                    <div>
-                      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Paper Constraints</h3>
-                      <div className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
-                         <div className="flex justify-between items-center text-sm">
-                            <span className="text-slate-600 font-medium">Page Width</span>
-                            <div className="flex items-center gap-2">
-                              <DraftInput value={draftGrid.pageWidth || 210} onChange={v => setDraftGrid(p => p ? ({...p, pageName: 'Custom', pageWidth: Math.max(1, v)}) : p)} /> mm
-                            </div>
-                         </div>
-                         <div className="flex justify-between items-center text-sm">
-                            <span className="text-slate-600 font-medium">Page Height</span>
-                            <div className="flex items-center gap-2">
-                              <DraftInput value={draftGrid.pageHeight || 297} onChange={v => setDraftGrid(p => p ? ({...p, pageName: 'Custom', pageHeight: Math.max(1, v)}) : p)} /> mm
-                            </div>
-                         </div>
-                         <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-200">
-                            <span className="text-slate-600 font-medium">Top Margin</span>
-                            <div className="flex items-center gap-2">
-                               <DraftInput value={draftGrid.paddingTop} onChange={v => setDraftGrid(p => p ? ({...p, paddingTop: v}) : p)} /> mm
-                            </div>
-                         </div>
-                         <div className="flex justify-between items-center text-sm">
-                            <span className="text-slate-600 font-medium">Left Margin</span>
-                            <div className="flex items-center gap-2">
-                               <DraftInput value={draftGrid.paddingLeft} onChange={v => setDraftGrid(p => p ? ({...p, paddingLeft: v}) : p)} /> mm
-                            </div>
-                         </div>
-                      </div>
-                    </div>
+                    )}
+                 </div>
+                 
+                 {/* Controls Side */}
+                 <div className="col-span-2 space-y-6">
                     
-                    <div className="space-y-6">
-                      {/* Layout Group */}
+                    <div className="mb-6">
+                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Style Template</label>
+                      <select 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
+                        value={(BUILT_IN_TEMPLATES.some(t => t.id === draftGrid.id) && !state.savedTemplates.some(template => gridsMatch(template, draftGrid))) ? 'custom' : draftGrid.id}
+                        onChange={e => {
+                          const selectedTemplate = state.savedTemplates.find(template => template.id === e.target.value);
+                          if (selectedTemplate) setDraftGrid({ ...selectedTemplate });
+                        }}
+                      >
+                         {(BUILT_IN_TEMPLATES.some(t => t.id === draftGrid.id) && !state.savedTemplates.some(template => gridsMatch(template, draftGrid))) && (
+                           <option value="custom">Unsaved changes</option>
+                         )}
+                         {state.savedTemplates.map(template => (
+                           <option key={template.id} value={template.id}>
+                             {template.name} ({template.pageWidth || 210} x {template.pageHeight || 297} mm)
+                           </option>
+                         ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                      {/* Paper Group */}
                       <div>
-                        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Grid Layout</h3>
+                        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Paper Constraints</h3>
                         <div className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600 font-medium">Rows</span>
-                              <DraftInput value={draftGrid.rows} onChange={v => setDraftGrid(p => p ? ({...p, rows: Math.max(1, v)}) : p)} />
-                           </div>
-                           <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600 font-medium">Columns</span>
-                              <DraftInput value={draftGrid.cols} onChange={v => setDraftGrid(p => p ? ({...p, cols: Math.max(1, v)}) : p)} />
-                           </div>
-                           <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-200">
-                              <span className="text-slate-600 font-medium">Row Gap</span>
+                              <span className="text-slate-600 font-medium">Page Width</span>
                               <div className="flex items-center gap-2">
-                                 <DraftInput value={draftGrid.gapY} onChange={v => setDraftGrid(p => p ? ({...p, gapY: v}) : p)} /> mm
+                                <DraftInput value={draftGrid.pageWidth || 210} onChange={v => setDraftGrid(p => p ? ({...p, pageName: 'Custom', pageWidth: Math.max(1, v)}) : p)} /> mm
                               </div>
                            </div>
                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600 font-medium">Column Gap</span>
+                              <span className="text-slate-600 font-medium">Page Height</span>
                               <div className="flex items-center gap-2">
-                                 <DraftInput value={draftGrid.gapX} onChange={v => setDraftGrid(p => p ? ({...p, gapX: v}) : p)} /> mm
+                                <DraftInput value={draftGrid.pageHeight || 297} onChange={v => setDraftGrid(p => p ? ({...p, pageName: 'Custom', pageHeight: Math.max(1, v)}) : p)} /> mm
+                              </div>
+                           </div>
+                           <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-200">
+                              <span className="text-slate-600 font-medium">Top Margin</span>
+                              <div className="flex items-center gap-2">
+                                 <DraftInput value={draftGrid.paddingTop} onChange={v => setDraftGrid(p => p ? ({...p, paddingTop: v}) : p)} /> mm
+                              </div>
+                           </div>
+                           <div className="flex justify-between items-center text-sm">
+                              <span className="text-slate-600 font-medium">Left Margin</span>
+                              <div className="flex items-center gap-2">
+                                 <DraftInput value={draftGrid.paddingLeft} onChange={v => setDraftGrid(p => p ? ({...p, paddingLeft: v}) : p)} /> mm
                               </div>
                            </div>
                         </div>
                       </div>
                       
-                      {/* Cell Group */}
-                      <div>
-                        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Cell Dimensions</h3>
-                        <div className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
-                           <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600 font-medium">Width</span>
-                              <div className="flex items-center gap-2">
-                                 <DraftInput value={draftGrid.cellWidth} onChange={v => setDraftGrid(p => p ? ({...p, cellWidth: v}) : p)} /> mm
-                              </div>
-                           </div>
-                           <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600 font-medium">Height</span>
-                              <div className="flex items-center gap-2">
-                                 <DraftInput value={draftGrid.cellHeight} onChange={v => setDraftGrid(p => p ? ({...p, cellHeight: v}) : p)} /> mm
-                              </div>
-                           </div>
+                      <div className="space-y-6">
+                        {/* Layout Group */}
+                        <div>
+                          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Grid Layout</h3>
+                          <div className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                             <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600 font-medium">Rows</span>
+                                <DraftInput value={draftGrid.rows} onChange={v => setDraftGrid(p => p ? ({...p, rows: Math.max(1, v)}) : p)} />
+                             </div>
+                             <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600 font-medium">Columns</span>
+                                <DraftInput value={draftGrid.cols} onChange={v => setDraftGrid(p => p ? ({...p, cols: Math.max(1, v)}) : p)} />
+                             </div>
+                             <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-200">
+                                <span className="text-slate-600 font-medium">Row Gap</span>
+                                <div className="flex items-center gap-2">
+                                   <DraftInput value={draftGrid.gapY} onChange={v => setDraftGrid(p => p ? ({...p, gapY: v}) : p)} /> mm
+                                </div>
+                             </div>
+                             <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600 font-medium">Column Gap</span>
+                                <div className="flex items-center gap-2">
+                                   <DraftInput value={draftGrid.gapX} onChange={v => setDraftGrid(p => p ? ({...p, gapX: v}) : p)} /> mm
+                                </div>
+                             </div>
+                          </div>
+                        </div>
+                        
+                        {/* Cell Group */}
+                        <div>
+                          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Cell Dimensions</h3>
+                          <div className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                             <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600 font-medium">Width</span>
+                                <div className="flex items-center gap-2">
+                                   <DraftInput value={draftGrid.cellWidth} onChange={v => setDraftGrid(p => p ? ({...p, cellWidth: v}) : p)} /> mm
+                                </div>
+                             </div>
+                             <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600 font-medium">Height</span>
+                                <div className="flex items-center gap-2">
+                                   <DraftInput value={draftGrid.cellHeight} onChange={v => setDraftGrid(p => p ? ({...p, cellHeight: v}) : p)} /> mm
+                                </div>
+                             </div>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-               </div>
-            </div>
-            
-            <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-100 sticky bottom-0 z-10">
-               <button 
-                  onClick={applyPaperStyle} 
-                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition shadow-sm"
-               >
-                  Save & Apply
-               </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+                 </div>
+              </div>
+              
+              <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-100 sticky bottom-0 z-10">
+                 <button 
+                    onClick={applyPaperStyle} 
+                    disabled={isOverflowing}
+                    className={`px-6 py-2 rounded-lg font-medium transition shadow-sm ${
+                      isOverflowing 
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                 >
+                    Save & Apply
+                 </button>
+              </div>
+            </motion.div>
+          </div>
+        );
+      })()}
 
       {pendingTemplateGrid && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4 print:hidden">
