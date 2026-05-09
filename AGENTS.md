@@ -56,6 +56,13 @@ Rust tests live beside the implementation under `#[cfg(test)]`, as in `src-tauri
 
 Manual print-quality changes should be checked with the high-resolution sample images and PDF outputs in the repository root, especially against Mr. Photo output.
 
+For printer-path investigations without a physical printer, capture retained Windows spool files and compare them with the tools in `tools/`:
+
+- `tools/xps_spool_extract.py`: extracts image resources, FixedPage XML, and print tickets from XPS-backed `.SPL` files.
+- `tools/emf_stretchdibits_extract.py`: extracts `EMR_STRETCHDIBITS` bitmap payloads from EMF-backed `.SPL`/`.emf` files.
+
+Do not commit local `.SPL`/`.SHD` files or extracted capture folders; they are diagnostic artifacts only.
+
 ## Commit & GitHub Integration
 
 - **Conventional Commits:** Use prefixes such as `fix:`, `feat:`, `chore:`, and `docs:`.

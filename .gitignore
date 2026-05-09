@@ -11,3 +11,12 @@ src-tauri/target
 
 *.png
 *.jpg
+
+# Local print-spool capture artifacts
+*.SPL
+*.SHD
+*_spool/
+*_xps/
+*_xps*/
+emf_stretchdibits_extract/
+xps_spool_extract/
