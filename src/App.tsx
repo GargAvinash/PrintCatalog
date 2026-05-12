@@ -18,7 +18,8 @@ import {
   MousePointer2,
   Square,
   Rows3,
-  ListEnd
+  ListEnd,
+  Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { invoke } from '@tauri-apps/api/core';
@@ -292,6 +293,8 @@ export default function App() {
   const [selectedPrinter, setSelectedPrinter] = useState<string>('');
   const [isPrinting, setIsPrinting] = useState(false);
   const [printStatus, setPrintStatus] = useState<{type: 'success' | 'error'; message: string} | null>(null);
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Fetch printers on mount
   useEffect(() => {
@@ -584,7 +587,7 @@ export default function App() {
         availableHeight / pageHeightPx
       );
 
-      setPreviewScale(Math.max(0.1, nextScale));
+      setPreviewScale(Math.max(0.35, nextScale));
     };
 
     updateScale();
@@ -603,8 +606,14 @@ export default function App() {
     <div className="flex flex-col h-screen bg-slate-50 font-sans overflow-hidden select-none text-slate-800">
       
       {/* Top Toolbar */}
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 print:hidden z-10">
+      <header className="min-h-[4rem] py-3 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between px-4 lg:px-6 gap-4 shrink-0 print:hidden z-10">
         <div className="flex items-center gap-3">
+          <button 
+            className="lg:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+            onClick={() => setIsSidebarOpen(true)}
+          >
+            <Menu className="w-5 h-5" />
+          </button>
           <div className="bg-blue-600 p-2 rounded-lg">
             <Printer className="w-5 h-5 text-white" />
           </div>
@@ -613,15 +622,15 @@ export default function App() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="px-4 py-2 border border-slate-200 rounded-lg flex items-center gap-6 bg-slate-50">
+        <div className="flex items-center gap-3 lg:gap-4 flex-wrap">
+          <div className="px-3 lg:px-4 py-2 border border-slate-200 rounded-lg flex items-center gap-3 lg:gap-6 bg-slate-50">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Style</span>
-               <span className="text-sm font-semibold text-slate-800">{state.grid.pageName || 'A4'} ({state.grid.pageWidth || 210} x {state.grid.pageHeight || 297} mm)</span>
+              <span className="hidden sm:inline-block text-xs font-semibold text-slate-500 uppercase tracking-wider">Style</span>
+               <span className="text-sm font-semibold text-slate-800 truncate max-w-[120px] lg:max-w-none">{state.grid.pageName || 'A4'} <span className="hidden lg:inline">({state.grid.pageWidth || 210} x {state.grid.pageHeight || 297} mm)</span></span>
             </div>
             <div className="w-px h-4 bg-slate-300" />
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Matrix</span>
+              <span className="hidden sm:inline-block text-xs font-semibold text-slate-500 uppercase tracking-wider">Matrix</span>
                <span className="text-sm font-semibold text-slate-800">{state.grid.rows} × {state.grid.cols}</span>
             </div>
           </div>
@@ -631,16 +640,16 @@ export default function App() {
               setDraftGrid({...state.grid});
               setIsPaperStyleOpen(true);
             }}
-            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 rounded-lg text-sm font-semibold text-slate-700 transition shadow-sm"
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 rounded-lg text-sm font-semibold text-slate-700 transition shadow-sm"
           >
-            <LayoutGrid className="w-4 h-4 text-blue-600" /> Paper Style
+            <LayoutGrid className="w-4 h-4 text-blue-600" /> <span className="hidden sm:inline">Paper Style</span><span className="sm:hidden">Style</span>
           </button>
 
           {/* Printer selector */}
           <select
             value={selectedPrinter}
             onChange={e => setSelectedPrinter(e.target.value)}
-            className="px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 max-w-[200px] truncate"
+            className="px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 max-w-[140px] lg:max-w-[200px] truncate"
           >
             {printers.length === 0 && <option value="">No printers found</option>}
             {printers.map(p => (
@@ -669,8 +678,21 @@ export default function App() {
       {/* Main Workspace */}
       <div className="flex-1 flex overflow-hidden">
         
+        {/* Overlay backdrop for mobile sidebar */}
+        {isSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 lg:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
+
         {/* Left Sidebar - Photo Catalog */}
-        <aside className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 print:hidden z-10">
+        <aside className={`
+          fixed inset-y-0 left-0 z-40 bg-white border-r border-slate-200 flex flex-col w-80 h-full shrink-0 print:hidden shadow-2xl lg:shadow-none
+          transform transition-transform duration-300 ease-in-out
+          lg:static lg:translate-x-0
+          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}>
           <div className="p-4 border-b border-slate-100 flex justify-between items-center">
              <div className="text-sm font-semibold text-slate-800">Photo Catalog</div>
              <button 
@@ -797,7 +819,7 @@ export default function App() {
         </aside>
 
         {/* Canvas Area */}
-        <main ref={previewAreaRef} className="flex-1 overflow-auto p-8 bg-slate-100/50 print:p-0 print:bg-white relative custom-scrollbar">
+        <main ref={previewAreaRef} className="flex-1 overflow-auto p-4 lg:p-8 bg-slate-100/50 print:p-0 print:bg-white relative custom-scrollbar">
           <div className="min-h-full min-w-full flex items-center justify-center print:block">
             <div
               className="preview-scale-shell transition-all duration-300 print:w-auto print:h-auto"
