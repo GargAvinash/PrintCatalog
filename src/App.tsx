@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 
 // --- Types ---
 
@@ -295,6 +296,7 @@ export default function App() {
   const [printStatus, setPrintStatus] = useState<{type: 'success' | 'error'; message: string} | null>(null);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>('');
 
   // Fetch printers on mount
   useEffect(() => {
@@ -305,6 +307,13 @@ export default function App() {
         if (def) setSelectedPrinter(def.name);
       })
       .catch(err => console.error('Failed to list printers:', err));
+
+    getVersion()
+      .then(setAppVersion)
+      .catch(err => {
+        console.error('Failed to get app version:', err);
+        setAppVersion(`Error: ${err}`);
+      });
   }, []);
   // Load images from IndexedDB on mount
   useEffect(() => {
@@ -617,8 +626,13 @@ export default function App() {
           <div className="bg-blue-600 p-2 rounded-lg">
             <Printer className="w-5 h-5 text-white" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 flex items-baseline gap-2">
             PrintCatalog
+            {appVersion && (
+              <span className="text-[11px] font-mono text-slate-400 font-medium tracking-normal mb-1">
+                v{appVersion}
+              </span>
+            )}
           </h1>
         </div>
 
@@ -811,10 +825,17 @@ export default function App() {
                })}
              </div>
           </div>
-          <div className="p-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 font-medium">
-            {gridAction === 'clear'
-              ? 'Clear mode removes photos using the selected range.'
-              : 'Select a photo, then click the grid using the selected range. Click a placed photo without a selected photo to edit options.'}
+          <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col gap-3">
+            <div className="text-xs text-slate-500 font-medium">
+              {gridAction === 'clear'
+                ? 'Clear mode removes photos using the selected range.'
+                : 'Select a photo, then click the grid using the selected range. Click a placed photo without a selected photo to edit options.'}
+            </div>
+            {appVersion && (
+              <div className="text-[10px] text-slate-400 font-mono text-center uppercase tracking-wider">
+                v{appVersion}
+              </div>
+            )}
           </div>
         </aside>
 
